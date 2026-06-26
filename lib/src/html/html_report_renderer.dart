@@ -338,7 +338,7 @@ class HtmlReportRenderer {
     return '''
 <div class="tree-file-preview" style="--depth: $depth" data-preview-src="${_escape(previewPath)}" data-preview-loaded="false">
   <p class="preview-state">Loading source preview...</p>
-  <iframe class="source-preview-frame" title="Source preview for ${_escape(file.path)}" loading="lazy"></iframe>
+  <iframe class="source-preview-frame" title="Source preview for ${_escape(file.path)}"></iframe>
 </div>
 ''';
   }
@@ -490,7 +490,7 @@ details[open] > summary .chevron { transform: rotate(90deg); }
 .preview-state { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; color: var(--muted); font-size: 12px; margin: 0; padding: 12px; }
 .tree-file-preview[data-preview-loaded="true"] .preview-state { display: none; }
 .tree-file-preview[data-preview-error="true"] .preview-state { color: var(--red); display: block; }
-.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: none; height: 560px; width: 100%; }
+.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block; height: 560px; width: 100%; }
 .tree-file-preview[data-preview-loaded="true"] .source-preview-frame { display: block; }
 @media (max-width: 900px) { .topbar { align-items: flex-start; flex-direction: column; } .summary-section { padding-left: 16px; padding-right: 16px; } .summary-grid { grid-template-columns: repeat(5, minmax(132px, 1fr)); overflow-x: auto; } .panel, .quality { margin-left: 16px; margin-right: 16px; } .insights-grid { grid-template-columns: 1fr 1fr; } .tree-toolbar { align-items: flex-start; grid-template-columns: 1fr; flex-direction: column; } .tree-actions { justify-content: flex-start; } .attention-file, .tree-row { align-items: flex-start; grid-template-columns: 1fr; } .tree-row { padding-left: calc(14px + (var(--depth) * 16px)); } .attention-meta, .tree-meta { justify-content: flex-start; white-space: normal; } }
 ''';

@@ -102,6 +102,13 @@ void main() {
     expect(html, contains('data-open-target="file-lib-a-dart"'));
     expect(html, contains('data-preview-src="files/lib-a-dart.html"'));
     expect(html, contains('class="source-preview-frame"'));
+    expect(html, isNot(contains('loading="lazy"')));
+    expect(
+      html,
+      contains(
+        '.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block;',
+      ),
+    );
     expect(html, isNot(contains('Coverage details')));
     expect(html, isNot(contains('class="group-detail"')));
     expect(html, isNot(contains('class="file-detail"')));
