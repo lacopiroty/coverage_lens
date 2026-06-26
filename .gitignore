@@ -1,0 +1,21 @@
+.DS_Store
+/.dart_tool/
+/build/
+/coverage/
+*.iml
+
+# IDEs
+.idea/
+.vscode/
+
+# Dart generated files
+.packages
+.pub-cache/
+.pub/
+doc/api/
+
+# Platform/editor noise
+*.log
+*.tmp
+*.swp
+Thumbs.db

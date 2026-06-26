@@ -1,0 +1,373 @@
+class LcovParser {
+  LcovParseResult parse(String input) {
+    final files = <LcovFileRecord>[];
+    final warnings = <LcovParseWarning>[];
+    _MutableLcovFile? current;
+
+    void finishCurrent() {
+      final file = current;
+      if (file == null) {
+        return;
+      }
+      files.add(file.toRecord());
+      current = null;
+    }
+
+    final inputLines = input.split(RegExp(r'\r?\n'));
+    for (var index = 0; index < inputLines.length; index += 1) {
+      final line = inputLines[index].trimRight();
+      final inputLineNumber = index + 1;
+
+      if (line.isEmpty || line == 'TN:') {
+        continue;
+      }
+
+      if (line == 'end_of_record') {
+        finishCurrent();
+        continue;
+      }
+
+      if (line.startsWith('SF:')) {
+        finishCurrent();
+        current = _MutableLcovFile(line.substring(3));
+        continue;
+      }
+
+      final file = current;
+      if (file == null) {
+        warnings.add(
+          LcovParseWarning(
+            inputLineNumber,
+            'Ignoring record before SF: $line',
+          ),
+        );
+        continue;
+      }
+
+      if (line.startsWith('DA:')) {
+        final parsed = _parseDa(
+          line.substring(3),
+          inputLineNumber,
+          warnings,
+        );
+        if (parsed != null) {
+          file.lines.add(parsed);
+        }
+      } else if (line.startsWith('LF:')) {
+        file.lineFound = _parseIntRecord(
+          'LF',
+          line.substring(3),
+          inputLineNumber,
+          warnings,
+        );
+      } else if (line.startsWith('LH:')) {
+        file.lineHit = _parseIntRecord(
+          'LH',
+          line.substring(3),
+          inputLineNumber,
+          warnings,
+        );
+      } else if (line.startsWith('FN:')) {
+        final parsed = _parseFunction(
+          line.substring(3),
+          inputLineNumber,
+          warnings,
+        );
+        if (parsed != null) {
+          file.functions.add(parsed);
+        }
+      } else if (line.startsWith('FNDA:')) {
+        _applyFunctionHit(file, line.substring(5), inputLineNumber, warnings);
+      } else if (line.startsWith('FNF:')) {
+        file.functionFound = _parseIntRecord(
+          'FNF',
+          line.substring(4),
+          inputLineNumber,
+          warnings,
+        );
+      } else if (line.startsWith('FNH:')) {
+        file.functionHit = _parseIntRecord(
+          'FNH',
+          line.substring(4),
+          inputLineNumber,
+          warnings,
+        );
+      } else if (line.startsWith('BRDA:')) {
+        final parsed = _parseBranch(
+          line.substring(5),
+          inputLineNumber,
+          warnings,
+        );
+        if (parsed != null) {
+          file.branches.add(parsed);
+        }
+      } else if (line.startsWith('BRF:')) {
+        file.branchFound = _parseIntRecord(
+          'BRF',
+          line.substring(4),
+          inputLineNumber,
+          warnings,
+        );
+      } else if (line.startsWith('BRH:')) {
+        file.branchHit = _parseIntRecord(
+          'BRH',
+          line.substring(4),
+          inputLineNumber,
+          warnings,
+        );
+      }
+    }
+
+    finishCurrent();
+
+    if (files.isEmpty && input.trim().isNotEmpty) {
+      warnings.add(
+        const LcovParseWarning(1, 'No usable LCOV file records were found.'),
+      );
+    }
+
+    return LcovParseResult(files: files, warnings: warnings);
+  }
+
+  LcovLineRecord? _parseDa(
+    String value,
+    int inputLineNumber,
+    List<LcovParseWarning> warnings,
+  ) {
+    final parts = value.split(',');
+    if (parts.length < 2) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid DA record: $value'),
+      );
+      return null;
+    }
+    final lineNumber = int.tryParse(parts[0]);
+    final hitCount = int.tryParse(parts[1]);
+    if (lineNumber == null || hitCount == null) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid DA record: $value'),
+      );
+      return null;
+    }
+    return LcovLineRecord(lineNumber: lineNumber, hitCount: hitCount);
+  }
+
+  int? _parseIntRecord(
+    String recordName,
+    String value,
+    int inputLineNumber,
+    List<LcovParseWarning> warnings,
+  ) {
+    final parsed = int.tryParse(value.trim());
+    if (parsed == null) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid $recordName record: $value'),
+      );
+    }
+    return parsed;
+  }
+
+  LcovFunctionRecord? _parseFunction(
+    String value,
+    int inputLineNumber,
+    List<LcovParseWarning> warnings,
+  ) {
+    final commaIndex = value.indexOf(',');
+    if (commaIndex <= 0 || commaIndex == value.length - 1) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid FN record: $value'),
+      );
+      return null;
+    }
+    final lineNumber = int.tryParse(value.substring(0, commaIndex));
+    if (lineNumber == null) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid FN record: $value'),
+      );
+      return null;
+    }
+    return LcovFunctionRecord(
+      lineNumber: lineNumber,
+      name: value.substring(commaIndex + 1),
+      hitCount: 0,
+    );
+  }
+
+  void _applyFunctionHit(
+    _MutableLcovFile file,
+    String value,
+    int inputLineNumber,
+    List<LcovParseWarning> warnings,
+  ) {
+    final commaIndex = value.indexOf(',');
+    if (commaIndex <= 0 || commaIndex == value.length - 1) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid FNDA record: $value'),
+      );
+      return;
+    }
+    final hitCount = int.tryParse(value.substring(0, commaIndex));
+    final name = value.substring(commaIndex + 1);
+    if (hitCount == null) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid FNDA record: $value'),
+      );
+      return;
+    }
+    final existingIndex = file.functions.indexWhere(
+      (function) => function.name == name,
+    );
+    if (existingIndex == -1) {
+      file.functions.add(
+        LcovFunctionRecord(lineNumber: 0, name: name, hitCount: hitCount),
+      );
+      return;
+    }
+    final existing = file.functions[existingIndex];
+    file.functions[existingIndex] = existing.copyWith(hitCount: hitCount);
+  }
+
+  LcovBranchRecord? _parseBranch(
+    String value,
+    int inputLineNumber,
+    List<LcovParseWarning> warnings,
+  ) {
+    final parts = value.split(',');
+    if (parts.length != 4) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid BRDA record: $value'),
+      );
+      return null;
+    }
+    final lineNumber = int.tryParse(parts[0]);
+    final blockNumber = int.tryParse(parts[1]);
+    final branchNumber = int.tryParse(parts[2]);
+    final hitCount = parts[3] == '-' ? 0 : int.tryParse(parts[3]);
+    if (lineNumber == null ||
+        blockNumber == null ||
+        branchNumber == null ||
+        hitCount == null) {
+      warnings.add(
+        LcovParseWarning(inputLineNumber, 'Invalid BRDA record: $value'),
+      );
+      return null;
+    }
+    return LcovBranchRecord(
+      lineNumber: lineNumber,
+      blockNumber: blockNumber,
+      branchNumber: branchNumber,
+      hitCount: hitCount,
+    );
+  }
+}
+
+class LcovParseResult {
+  const LcovParseResult({required this.files, required this.warnings});
+
+  final List<LcovFileRecord> files;
+  final List<LcovParseWarning> warnings;
+}
+
+class LcovParseWarning {
+  const LcovParseWarning(this.lineNumber, this.message);
+
+  final int lineNumber;
+  final String message;
+}
+
+class LcovFileRecord {
+  const LcovFileRecord({
+    required this.sourceFile,
+    required this.lines,
+    required this.functions,
+    required this.branches,
+    this.lineFound,
+    this.lineHit,
+    this.functionFound,
+    this.functionHit,
+    this.branchFound,
+    this.branchHit,
+  });
+
+  final String sourceFile;
+  final List<LcovLineRecord> lines;
+  final List<LcovFunctionRecord> functions;
+  final List<LcovBranchRecord> branches;
+  final int? lineFound;
+  final int? lineHit;
+  final int? functionFound;
+  final int? functionHit;
+  final int? branchFound;
+  final int? branchHit;
+}
+
+class LcovLineRecord {
+  const LcovLineRecord({required this.lineNumber, required this.hitCount});
+
+  final int lineNumber;
+  final int hitCount;
+}
+
+class LcovFunctionRecord {
+  const LcovFunctionRecord({
+    required this.lineNumber,
+    required this.name,
+    required this.hitCount,
+  });
+
+  final int lineNumber;
+  final String name;
+  final int hitCount;
+
+  LcovFunctionRecord copyWith({int? hitCount}) {
+    return LcovFunctionRecord(
+      lineNumber: lineNumber,
+      name: name,
+      hitCount: hitCount ?? this.hitCount,
+    );
+  }
+}
+
+class LcovBranchRecord {
+  const LcovBranchRecord({
+    required this.lineNumber,
+    required this.blockNumber,
+    required this.branchNumber,
+    required this.hitCount,
+  });
+
+  final int lineNumber;
+  final int blockNumber;
+  final int branchNumber;
+  final int hitCount;
+}
+
+class _MutableLcovFile {
+  _MutableLcovFile(this.sourceFile);
+
+  final String sourceFile;
+  final lines = <LcovLineRecord>[];
+  final functions = <LcovFunctionRecord>[];
+  final branches = <LcovBranchRecord>[];
+  int? lineFound;
+  int? lineHit;
+  int? functionFound;
+  int? functionHit;
+  int? branchFound;
+  int? branchHit;
+
+  LcovFileRecord toRecord() {
+    return LcovFileRecord(
+      sourceFile: sourceFile,
+      lines: List.unmodifiable(lines),
+      functions: List.unmodifiable(functions),
+      branches: List.unmodifiable(branches),
+      lineFound: lineFound,
+      lineHit: lineHit,
+      functionFound: functionFound,
+      functionHit: functionHit,
+      branchFound: branchFound,
+      branchHit: branchHit,
+    );
+  }
+}

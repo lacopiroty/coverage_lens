@@ -1,0 +1,14 @@
+sourceRoot: .
+lcovPath: coverage/lcov.info
+outputDir: build/coverage_lens
+thresholds:
+  line: 80
+  branch: 70
+include:
+  - lib/**
+  - modules/*/lib/**
+exclude:
+  - "**/*.g.dart"
+  - "**/*.freezed.dart"
+  - "**/*.config.dart"
+  - "**/generated/**"
