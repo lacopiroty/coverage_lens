@@ -16,6 +16,7 @@ instrument code, or infer which test covered a line.
 - Lists for files below threshold and files with missing branch coverage.
 - Include and exclude globs for generated files.
 - Local live server for previewing reports without writing HTML assets.
+- Optional one-page PDF summary with aggregate statistics.
 - CI-friendly threshold exit codes.
 
 ## Install
@@ -84,6 +85,25 @@ The report output is a folder. Keep `index.html`, `files/`, and `assets/`
 together when sharing or archiving the report. Source previews are stored in
 `files/` so the main `index.html` stays small even for large projects.
 
+To also write a one-page PDF with aggregate statistics only, add
+`--summary-pdf`:
+
+```bash
+dart run coverage_lens:coverage_lens report \
+  --lcov coverage/lcov.info \
+  --source . \
+  --out build/coverage_lens \
+  --summary-pdf \
+  --summary-icon assets/app_icon.png \
+  --project-name "Example App"
+```
+
+The PDF is written to `build/coverage_lens/summary.pdf` by default. Use
+`--summary-pdf-out path/to/summary.pdf` to choose a different file.
+Use `--summary-icon path/to/icon.png` or `summaryIcon` in the config to place a
+small project icon in the PDF header. Use `--project-name` or `projectName` to
+show the application name next to that icon. PNG and JPEG files are supported.
+
 If installed globally, use:
 
 ```bash
@@ -125,6 +145,8 @@ lcovPaths:
   - modules/**/coverage/lcov.info
   - packages/**/coverage/lcov.info
 outputDir: build/coverage_lens
+summaryIcon: assets/app_icon.png
+projectName: Example App
 thresholds:
   line: 80
   branch: 70

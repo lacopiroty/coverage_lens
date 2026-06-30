@@ -1,3 +1,14 @@
+## 1.2.0
+
+- Add optional one-page summary PDF generation for aggregate coverage
+  statistics through `report --summary-pdf`.
+- Add `summaryIcon` / `--summary-icon` for custom project icons in summary
+  PDFs.
+- Add `projectName` / `--project-name` so summary PDFs can show the
+  application name next to the Coverage Lens label.
+- Include Git branch, commit, and dirty working tree state in summary PDFs.
+- Improve summary PDF scope text and header layout.
+
 ## 1.1.0
 
 - Add `coverage_lens serve` for local live reports that serve `index.html`,

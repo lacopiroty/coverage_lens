@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:image/image.dart' as image;
 import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
 
 import '../analysis/coverage_analyzer.dart';
 import '../analysis/source_loader.dart';
@@ -10,6 +12,7 @@ import '../config/coverage_lens_config.dart';
 import '../html/html_report_renderer.dart';
 import '../lcov/lcov_parser.dart';
 import '../model/coverage_models.dart';
+import '../pdf/pdf_summary_renderer.dart';
 import '../server/live_server.dart';
 
 class CoverageLensCli {
@@ -60,6 +63,10 @@ class CoverageLensCli {
       ..addMultiOption('lcov')
       ..addOption('source')
       ..addOption('out')
+      ..addFlag('summary-pdf', negatable: false)
+      ..addOption('summary-pdf-out')
+      ..addOption('summary-icon')
+      ..addOption('project-name')
       ..addOption('fail-under-lines')
       ..addOption('fail-under-branches')
       ..addMultiOption('include')
@@ -106,6 +113,15 @@ class CoverageLensCli {
       file.writeAsStringSync(entry.value);
     }
     stdout.writeln('Coverage report written to ${outputDir.path}/index.html');
+    final pdfExitCode = _writeSummaryPdfIfRequested(
+      command,
+      outputDir: outputDir,
+      config: config,
+      report: report,
+    );
+    if (pdfExitCode != null) {
+      return pdfExitCode;
+    }
 
     if (report.summary.lineCoveragePercent < config.lineThreshold) {
       stderr.writeln(
@@ -123,6 +139,53 @@ class CoverageLensCli {
     }
 
     return 0;
+  }
+
+  int? _writeSummaryPdfIfRequested(
+    ArgResults command, {
+    required Directory outputDir,
+    required CoverageLensConfig config,
+    required CoverageReport report,
+  }) {
+    final requested = command['summary-pdf'] == true;
+    final customPath = command['summary-pdf-out'] as String?;
+    if (!requested && (customPath == null || customPath.isEmpty)) {
+      return null;
+    }
+
+    final iconPath = command['summary-icon'] as String? ?? config.summaryIcon;
+    final icon = _loadSummaryIcon(iconPath);
+    if (iconPath != null && iconPath.isNotEmpty && icon == null) {
+      return 66;
+    }
+    final file = customPath == null || customPath.isEmpty
+        ? File(p.join(outputDir.path, 'summary.pdf'))
+        : File(customPath);
+    file.parent.createSync(recursive: true);
+    file.writeAsBytesSync(
+      const PdfSummaryRenderer().render(
+        report,
+        options: PdfSummaryOptions(
+          branch: _gitValue(config.sourceRoot, [
+            'rev-parse',
+            '--abbrev-ref',
+            'HEAD',
+          ]),
+          commit: _gitValue(config.sourceRoot, [
+            'rev-parse',
+            '--short',
+            'HEAD',
+          ]),
+          isDirty: _gitIsDirty(config.sourceRoot),
+          lineThreshold: config.lineThreshold,
+          branchThreshold: config.branchThreshold,
+          icon: icon,
+          projectName: _summaryProjectName(config),
+        ),
+      ),
+    );
+    stdout.writeln('Coverage summary PDF written to ${file.path}');
+    return null;
   }
 
   Future<int> _runServe(ArgResults command) async {
@@ -192,6 +255,9 @@ class CoverageLensCli {
       outputDir: command.options.contains('out')
           ? command['out'] as String? ?? config.outputDir
           : config.outputDir,
+      projectName: command.options.contains('project-name')
+          ? command['project-name'] as String? ?? config.projectName
+          : config.projectName,
       lineThreshold:
           _doubleOption(command['fail-under-lines']) ?? config.lineThreshold,
       branchThreshold: _doubleOption(command['fail-under-branches']) ??
@@ -447,6 +513,127 @@ class CoverageLensCli {
   int _unknownCommand(String command) {
     stderr.writeln('Unknown command: $command');
     return 64;
+  }
+
+  PdfSummaryIcon? _loadSummaryIcon(String? path) {
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+    final file = File(path);
+    if (!file.existsSync()) {
+      stderr.writeln('Summary icon not found: $path');
+      return null;
+    }
+    image.Image? decoded;
+    try {
+      decoded = image.decodeImage(file.readAsBytesSync());
+    } on image.ImageException {
+      decoded = null;
+    }
+    if (decoded == null) {
+      stderr.writeln('Summary icon must be a supported image file: $path');
+      return null;
+    }
+
+    const maxSize = 96;
+    final largestSide =
+        decoded.width > decoded.height ? decoded.width : decoded.height;
+    final ratio = largestSide == 0 ? 1.0 : maxSize / largestSide;
+    final resized = ratio < 1
+        ? image.copyResize(
+            decoded,
+            width: (decoded.width * ratio).round(),
+            height: (decoded.height * ratio).round(),
+            interpolation: image.Interpolation.average,
+          )
+        : decoded;
+    final rgb = <int>[];
+    for (var y = 0; y < resized.height; y += 1) {
+      for (var x = 0; x < resized.width; x += 1) {
+        final pixel = resized.getPixel(x, y);
+        final alpha = pixel.aNormalized;
+        rgb
+          ..add(_blendOnWhite(pixel.rNormalized, alpha))
+          ..add(_blendOnWhite(pixel.gNormalized, alpha))
+          ..add(_blendOnWhite(pixel.bNormalized, alpha));
+      }
+    }
+    return PdfSummaryIcon(
+      width: resized.width,
+      height: resized.height,
+      rgbBytes: List.unmodifiable(rgb),
+    );
+  }
+
+  int _blendOnWhite(num channel, num alpha) {
+    final blended = 1 - (1 - channel) * alpha;
+    return (blended * 255).round().clamp(0, 255).toInt();
+  }
+
+  String? _summaryProjectName(CoverageLensConfig config) {
+    final configured = config.projectName;
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured.trim();
+    }
+    final pubspec = File(p.join(config.sourceRoot, 'pubspec.yaml'));
+    if (!pubspec.existsSync()) {
+      return null;
+    }
+    try {
+      final yaml = loadYaml(pubspec.readAsStringSync());
+      if (yaml is! YamlMap || yaml['name'] is! String) {
+        return null;
+      }
+      return _displayProjectName(yaml['name'] as String);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  String _displayProjectName(String packageName) {
+    return packageName
+        .split(RegExp(r'[_\-\s]+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
+  }
+
+  static String? _gitValue(String sourceRoot, List<String> arguments) {
+    try {
+      final result = Process.runSync(
+        'git',
+        ['-C', Directory(sourceRoot).absolute.path, ...arguments],
+        stdoutEncoding: systemEncoding,
+        stderrEncoding: systemEncoding,
+      );
+      if (result.exitCode != 0) {
+        return null;
+      }
+      final value = (result.stdout as String).trim();
+      return value.isEmpty ? null : value;
+    } on ProcessException {
+      return null;
+    }
+  }
+
+  static bool? _gitIsDirty(String sourceRoot) {
+    try {
+      final result = Process.runSync(
+        'git',
+        ['-C', Directory(sourceRoot).absolute.path, 'diff', '--quiet'],
+        stdoutEncoding: systemEncoding,
+        stderrEncoding: systemEncoding,
+      );
+      if (result.exitCode == 0) {
+        return false;
+      }
+      if (result.exitCode == 1) {
+        return true;
+      }
+      return null;
+    } on ProcessException {
+      return null;
+    }
   }
 }
 

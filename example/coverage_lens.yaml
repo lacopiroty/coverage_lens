@@ -4,6 +4,8 @@ lcovPaths:
   - modules/**/coverage/lcov.info
   - packages/**/coverage/lcov.info
 outputDir: build/coverage_lens
+summaryIcon: assets/app_icon.png
+projectName: Example App
 thresholds:
   line: 80
   branch: 70

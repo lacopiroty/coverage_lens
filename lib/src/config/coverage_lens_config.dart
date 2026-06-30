@@ -8,6 +8,8 @@ class CoverageLensConfig {
     this.lcovPath = 'coverage/lcov.info',
     this.lcovPaths = const [],
     this.outputDir = 'build/coverage_lens',
+    this.summaryIcon,
+    this.projectName,
     this.lineThreshold = 80,
     this.branchThreshold = 70,
     this.includes = const [],
@@ -18,6 +20,8 @@ class CoverageLensConfig {
   final String lcovPath;
   final List<String> lcovPaths;
   final String outputDir;
+  final String? summaryIcon;
+  final String? projectName;
   final double lineThreshold;
   final double branchThreshold;
   final List<String> includes;
@@ -31,6 +35,8 @@ class CoverageLensConfig {
     String? lcovPath,
     List<String>? lcovPaths,
     String? outputDir,
+    String? summaryIcon,
+    String? projectName,
     double? lineThreshold,
     double? branchThreshold,
     List<String>? includes,
@@ -41,6 +47,8 @@ class CoverageLensConfig {
       lcovPath: lcovPath ?? this.lcovPath,
       lcovPaths: lcovPaths ?? this.lcovPaths,
       outputDir: outputDir ?? this.outputDir,
+      summaryIcon: summaryIcon ?? this.summaryIcon,
+      projectName: projectName ?? this.projectName,
       lineThreshold: lineThreshold ?? this.lineThreshold,
       branchThreshold: branchThreshold ?? this.branchThreshold,
       includes: includes ?? this.includes,
@@ -76,6 +84,8 @@ class CoverageLensConfig {
       lcovPaths: lcovPaths,
       outputDir:
           _string(yaml['outputDir'], 'outputDir') ?? 'build/coverage_lens',
+      summaryIcon: _string(yaml['summaryIcon'], 'summaryIcon'),
+      projectName: _string(yaml['projectName'], 'projectName'),
       lineThreshold: lineThreshold,
       branchThreshold: branchThreshold,
       includes: _stringList(yaml['include'], 'include'),

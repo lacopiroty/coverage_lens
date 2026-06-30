@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:coverage_lens/src/cli/coverage_lens_cli.dart';
+import 'package:image/image.dart' as image;
 import 'package:test/test.dart';
 
 void main() {
@@ -75,6 +76,74 @@ void main() {
     expect(indexHtml, isNot(contains('return a + b;')));
     expect(previewHtml, contains('return a + b;'));
     expect(previewHtml, contains('../assets/source_preview.css'));
+  });
+
+  test('writes a one-page summary pdf without source file details', () async {
+    final outDir = Directory('build/test_cli_summary_pdf');
+    if (outDir.existsSync()) {
+      outDir.deleteSync(recursive: true);
+    }
+    final iconImage = image.Image(width: 2, height: 2)
+      ..setPixelRgba(0, 0, 34, 116, 180, 255)
+      ..setPixelRgba(1, 0, 34, 116, 180, 255)
+      ..setPixelRgba(0, 1, 52, 166, 112, 255)
+      ..setPixelRgba(1, 1, 52, 166, 112, 255);
+    final iconFile = File('${outDir.path}/icon.png')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(image.encodePng(iconImage));
+
+    final exitCode = await CoverageLensCli().run([
+      'report',
+      '--lcov',
+      'test/fixtures/sample.lcov',
+      '--source',
+      'test/fixtures/project',
+      '--out',
+      outDir.path,
+      '--summary-pdf',
+      '--summary-icon',
+      iconFile.path,
+      '--project-name',
+      'Sample App',
+      '--fail-under-lines',
+      '0',
+      '--fail-under-branches',
+      '0',
+    ]);
+
+    final pdfFile = File('${outDir.path}/summary.pdf');
+    final pdfText = String.fromCharCodes(pdfFile.readAsBytesSync());
+
+    expect(exitCode, 0);
+    expect(pdfFile.existsSync(), isTrue);
+    expect(pdfText, startsWith('%PDF-1.4'));
+    expect(RegExp(r'/Type /Page\b').allMatches(pdfText), hasLength(1));
+    expect(pdfText, contains('/Count 1'));
+    expect(pdfText, contains('Coverage summary'));
+    expect(pdfText, contains('SAMPLE APP | COVERAGE LENS'));
+    expect(pdfText, isNot(contains('COVERAGE LENS REPORT')));
+    expect(pdfText, contains('Branch coverage'));
+    expect(pdfText, contains('Line mix'));
+    expect(pdfText, contains('At a glance'));
+    expect(pdfText, contains('Files analyzed'));
+    expect(pdfText, contains('/Subtype /Image'));
+    expect(pdfText, contains('Report scope'));
+    expect(
+      pdfText,
+      contains(
+        'This PDF summarizes the configured LCOV source scope for the current Git snapshot.',
+      ),
+    );
+    expect(
+      pdfText,
+      isNot(
+        contains(
+          'A one-page view of aggregate test coverage. No source files, no code.',
+        ),
+      ),
+    );
+    expect(pdfText, isNot(contains('lib/calculator.dart')));
+    expect(pdfText, isNot(contains('return a + b;')));
   });
 
   test('merges multiple lcov files and rebases package relative sources',
