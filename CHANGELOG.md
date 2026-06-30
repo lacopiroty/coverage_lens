@@ -1,3 +1,8 @@
+## 1.1.0
+
+- Add `coverage_lens serve` for local live reports that serve `index.html`,
+  source previews, and CSS from memory without writing report assets to disk.
+
 ## 1.0.2
 
 - Support multiple LCOV inputs through repeated `--lcov` options.

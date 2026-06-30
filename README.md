@@ -15,6 +15,7 @@ instrument code, or infer which test covered a line.
 - Lazy-loaded file previews with LCOV hit counts and branch markers.
 - Lists for files below threshold and files with missing branch coverage.
 - Include and exclude globs for generated files.
+- Local live server for previewing reports without writing HTML assets.
 - CI-friendly threshold exit codes.
 
 ## Install
@@ -88,6 +89,29 @@ If installed globally, use:
 ```bash
 coverage_lens report
 ```
+
+## Live Local Preview
+
+For local review, run a live server instead of writing `index.html`, `files/`,
+and `assets/` to disk:
+
+```bash
+dart run coverage_lens:coverage_lens serve \
+  --lcov coverage/lcov.info \
+  --lcov modules/**/coverage/lcov.info \
+  --source .
+```
+
+By default the report is available at `http://127.0.0.1:8787/`. Use `--host`
+and `--port` to change the bind address:
+
+```bash
+dart run coverage_lens:coverage_lens serve --port 9000
+```
+
+The live server still uses the LCOV file as the source of truth, but serves the
+main report, source previews, and CSS from memory. This keeps local inspection
+fast without creating a `files/` preview folder.
 
 ## Configuration
 

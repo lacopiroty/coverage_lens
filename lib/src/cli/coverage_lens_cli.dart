@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -8,12 +9,15 @@ import '../analysis/source_loader.dart';
 import '../config/coverage_lens_config.dart';
 import '../html/html_report_renderer.dart';
 import '../lcov/lcov_parser.dart';
+import '../model/coverage_models.dart';
+import '../server/live_server.dart';
 
 class CoverageLensCli {
   Future<int> run(List<String> arguments) async {
     final parser = ArgParser()
       ..addFlag('help', abbr: 'h', negatable: false)
-      ..addCommand('report', _reportParser());
+      ..addCommand('report', _reportParser())
+      ..addCommand('serve', _serveParser());
 
     ArgResults parsed;
     try {
@@ -25,21 +29,33 @@ class CoverageLensCli {
     }
 
     if (arguments.isEmpty || parsed['help'] == true) {
-      stdout.writeln('Usage: dart run coverage_lens:coverage_lens report');
+      stdout.writeln(
+        'Usage: dart run coverage_lens:coverage_lens <report|serve>',
+      );
       return 0;
     }
 
-    if (parsed.command?.name != 'report') {
+    final command = parsed.command;
+    if (command == null) {
       stderr.writeln(
-          'Unknown command: ${parsed.command?.name ?? arguments.first}');
+        'Unknown command: ${arguments.first}',
+      );
       return 64;
     }
 
-    return _runReport(parsed.command!);
+    switch (command.name) {
+      case 'report':
+        return _runReport(command);
+      case 'serve':
+        return _runServe(command);
+      default:
+        return _unknownCommand(command.name ?? arguments.first);
+    }
   }
 
   ArgParser _reportParser() {
     return ArgParser()
+      ..addFlag('help', abbr: 'h', negatable: false)
       ..addOption('config', defaultsTo: 'coverage_lens.yaml')
       ..addMultiOption('lcov')
       ..addOption('source')
@@ -50,78 +66,37 @@ class CoverageLensCli {
       ..addMultiOption('exclude');
   }
 
+  ArgParser _serveParser() {
+    return ArgParser()
+      ..addFlag('help', abbr: 'h', negatable: false)
+      ..addOption('config', defaultsTo: 'coverage_lens.yaml')
+      ..addMultiOption('lcov')
+      ..addOption('source')
+      ..addOption('host', defaultsTo: CoverageLensLiveServer.defaultHost)
+      ..addOption('port', defaultsTo: '${CoverageLensLiveServer.defaultPort}')
+      ..addOption('fail-under-lines')
+      ..addOption('fail-under-branches')
+      ..addMultiOption('include')
+      ..addMultiOption('exclude');
+  }
+
   Future<int> _runReport(ArgResults command) async {
-    CoverageLensConfig config;
-    try {
-      config = CoverageLensConfig.loadFromFile(command['config'] as String);
-    } on FormatException catch (error) {
-      stderr.writeln('Invalid config: ${error.message}');
-      return 64;
+    if (command['help'] == true) {
+      stdout.writeln('Usage: dart run coverage_lens:coverage_lens report');
+      return 0;
     }
 
-    final cliLcovPaths = command['lcov'] as List<String>;
-    config = config.copyWith(
-      lcovPaths: cliLcovPaths.isEmpty ? config.lcovPaths : cliLcovPaths,
-      sourceRoot: command['source'] as String? ?? config.sourceRoot,
-      outputDir: command['out'] as String? ?? config.outputDir,
-      lineThreshold:
-          _doubleOption(command['fail-under-lines']) ?? config.lineThreshold,
-      branchThreshold: _doubleOption(command['fail-under-branches']) ??
-          config.branchThreshold,
-      includes: (command['include'] as List<String>).isEmpty
-          ? config.includes
-          : command['include'] as List<String>,
-      excludes: [
-        ...config.excludes,
-        ...command['exclude'] as List<String>,
-      ],
-    );
-
-    final sourceRoot = Directory(config.sourceRoot);
-    if (!sourceRoot.existsSync()) {
-      stderr.writeln('Source root not found: ${config.sourceRoot}');
-      return 66;
+    final prepared = await _prepareReport(command);
+    if (prepared.exitCode != null) {
+      return prepared.exitCode!;
     }
 
-    final lcovFiles = _resolveLcovFiles(config.effectiveLcovPaths);
-    if (lcovFiles == null) {
-      return 66;
-    }
-
-    final parser = LcovParser();
-    final records = <LcovFileRecord>[];
-    for (final lcovFile in lcovFiles) {
-      final parseResult = parser.parse(lcovFile.readAsStringSync());
-      records.addAll(
-        _rebaseRecords(
-          parseResult.files,
-          lcovFile: lcovFile,
-          sourceRoot: sourceRoot,
-        ),
-      );
-    }
-    if (records.isEmpty) {
-      stderr.writeln(
-        'No usable LCOV records found in ${lcovFiles.map((file) => file.path).join(', ')}',
-      );
-      return 66;
-    }
-    final mergedRecords = LcovRecordMerger().merge(records);
-
-    final report = CoverageAnalyzer().analyze(
-      records: mergedRecords,
-      sourceResolver: FileSystemSourceResolver(sourceRoot: config.sourceRoot),
-      config: CoverageAnalysisConfig(
-        lineWarningThreshold: config.lineThreshold,
-        branchWarningThreshold: config.branchThreshold,
-        includes: config.includes,
-        excludes: config.excludes,
-      ),
-    );
+    final config = prepared.config!;
+    final report = prepared.report!;
+    final htmlReport = prepared.htmlReport!;
 
     final outputDir = Directory(config.outputDir)..createSync(recursive: true);
     _clearManagedOutput(outputDir);
-    final htmlReport = HtmlReportRenderer().renderReport(report);
     File(p.join(outputDir.path, 'index.html')).writeAsStringSync(
       htmlReport.indexHtml,
     );
@@ -148,6 +123,136 @@ class CoverageLensCli {
     }
 
     return 0;
+  }
+
+  Future<int> _runServe(ArgResults command) async {
+    if (command['help'] == true) {
+      stdout.writeln('Usage: dart run coverage_lens:coverage_lens serve');
+      return 0;
+    }
+
+    final prepared = await _prepareReport(command);
+    if (prepared.exitCode != null) {
+      return prepared.exitCode!;
+    }
+
+    final port = int.tryParse(command['port'] as String? ?? '');
+    if (port == null || port < 0 || port > 65535) {
+      stderr.writeln('Invalid port: ${command['port']}');
+      return 64;
+    }
+
+    final host =
+        command['host'] as String? ?? CoverageLensLiveServer.defaultHost;
+    final server = await CoverageLensLiveServer(
+      prepared.htmlReport!,
+    ).start(host: host, port: port);
+    stdout.writeln(
+      'Coverage Lens live report available at http://$host:${server.port}/',
+    );
+    stdout.writeln('Press Ctrl+C to stop.');
+
+    final shutdown = Completer<int>();
+    final subscriptions = <StreamSubscription<ProcessSignal>>[];
+
+    Future<void> stop() async {
+      if (shutdown.isCompleted) {
+        return;
+      }
+      await server.close(force: true);
+      for (final subscription in subscriptions) {
+        await subscription.cancel();
+      }
+      shutdown.complete(0);
+    }
+
+    try {
+      subscriptions.add(ProcessSignal.sigint.watch().listen((_) => stop()));
+      subscriptions.add(ProcessSignal.sigterm.watch().listen((_) => stop()));
+    } on UnsupportedError {
+      // The open server keeps the process alive on platforms without signals.
+    }
+
+    return shutdown.future;
+  }
+
+  Future<_PreparedCoverageReport> _prepareReport(ArgResults command) async {
+    CoverageLensConfig config;
+    try {
+      config = CoverageLensConfig.loadFromFile(command['config'] as String);
+    } on FormatException catch (error) {
+      stderr.writeln('Invalid config: ${error.message}');
+      return const _PreparedCoverageReport(exitCode: 64);
+    }
+
+    final cliLcovPaths = command['lcov'] as List<String>;
+    config = config.copyWith(
+      lcovPaths: cliLcovPaths.isEmpty ? config.lcovPaths : cliLcovPaths,
+      sourceRoot: command['source'] as String? ?? config.sourceRoot,
+      outputDir: command.options.contains('out')
+          ? command['out'] as String? ?? config.outputDir
+          : config.outputDir,
+      lineThreshold:
+          _doubleOption(command['fail-under-lines']) ?? config.lineThreshold,
+      branchThreshold: _doubleOption(command['fail-under-branches']) ??
+          config.branchThreshold,
+      includes: (command['include'] as List<String>).isEmpty
+          ? config.includes
+          : command['include'] as List<String>,
+      excludes: [
+        ...config.excludes,
+        ...command['exclude'] as List<String>,
+      ],
+    );
+
+    final sourceRoot = Directory(config.sourceRoot);
+    if (!sourceRoot.existsSync()) {
+      stderr.writeln('Source root not found: ${config.sourceRoot}');
+      return const _PreparedCoverageReport(exitCode: 66);
+    }
+
+    final lcovFiles = _resolveLcovFiles(config.effectiveLcovPaths);
+    if (lcovFiles == null) {
+      return const _PreparedCoverageReport(exitCode: 66);
+    }
+
+    final parser = LcovParser();
+    final records = <LcovFileRecord>[];
+    for (final lcovFile in lcovFiles) {
+      final parseResult = parser.parse(lcovFile.readAsStringSync());
+      records.addAll(
+        _rebaseRecords(
+          parseResult.files,
+          lcovFile: lcovFile,
+          sourceRoot: sourceRoot,
+        ),
+      );
+    }
+    if (records.isEmpty) {
+      stderr.writeln(
+        'No usable LCOV records found in ${lcovFiles.map((file) => file.path).join(', ')}',
+      );
+      return const _PreparedCoverageReport(exitCode: 66);
+    }
+    final mergedRecords = LcovRecordMerger().merge(records);
+
+    final report = CoverageAnalyzer().analyze(
+      records: mergedRecords,
+      sourceResolver: FileSystemSourceResolver(sourceRoot: config.sourceRoot),
+      config: CoverageAnalysisConfig(
+        lineWarningThreshold: config.lineThreshold,
+        branchWarningThreshold: config.branchThreshold,
+        includes: config.includes,
+        excludes: config.excludes,
+      ),
+    );
+
+    final htmlReport = HtmlReportRenderer().renderReport(report);
+    return _PreparedCoverageReport(
+      config: config,
+      report: report,
+      htmlReport: htmlReport,
+    );
   }
 
   List<File>? _resolveLcovFiles(List<String> paths) {
@@ -338,4 +443,23 @@ class CoverageLensCli {
     }
     return double.tryParse(value);
   }
+
+  int _unknownCommand(String command) {
+    stderr.writeln('Unknown command: $command');
+    return 64;
+  }
+}
+
+class _PreparedCoverageReport {
+  const _PreparedCoverageReport({
+    this.exitCode,
+    this.config,
+    this.report,
+    this.htmlReport,
+  });
+
+  final int? exitCode;
+  final CoverageLensConfig? config;
+  final CoverageReport? report;
+  final HtmlReportOutput? htmlReport;
 }
