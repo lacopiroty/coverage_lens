@@ -4,9 +4,12 @@ import 'package:path/path.dart' as p;
 
 import 'coverage_analyzer.dart';
 
+/// Source resolver that reads files from the local file system.
 class FileSystemSourceResolver implements SourceResolver {
+  /// Creates a resolver rooted at [sourceRoot].
   const FileSystemSourceResolver({required this.sourceRoot});
 
+  /// Directory used to resolve relative LCOV source paths.
   final String sourceRoot;
 
   @override
@@ -20,15 +23,22 @@ class FileSystemSourceResolver implements SourceResolver {
   }
 }
 
+/// Line ignore information parsed from Dart coverage comments.
 class SourceIgnoreMap {
+  /// Creates an ignore map.
   const SourceIgnoreMap(this.ignoredLines, {required this.ignoreFile});
 
+  /// One-based source line numbers excluded from coverage.
   final Set<int> ignoredLines;
+
+  /// Whether the whole source file should be excluded.
   final bool ignoreFile;
 
+  /// Returns whether [lineNumber] should be excluded from coverage.
   bool ignores(int lineNumber) =>
       ignoreFile || ignoredLines.contains(lineNumber);
 
+  /// Parses `coverage:ignore-*` directives from [source].
   static SourceIgnoreMap fromSource(String? source) {
     if (source == null) {
       return const SourceIgnoreMap({}, ignoreFile: false);

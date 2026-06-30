@@ -5,20 +5,27 @@ import '../model/coverage_models.dart';
 import 'path_filter.dart';
 import 'source_loader.dart';
 
+/// Reads source text for paths referenced by LCOV records.
 abstract interface class SourceResolver {
+  /// Returns the source text for [path], or `null` when it is unavailable.
   String? readSource(String path);
 }
 
+/// Source resolver backed by an in-memory map.
 class InMemorySourceResolver implements SourceResolver {
+  /// Creates a resolver from LCOV source paths to source text.
   const InMemorySourceResolver(this.sources);
 
+  /// Source text keyed by the same paths used in LCOV `SF:` records.
   final Map<String, String> sources;
 
   @override
   String? readSource(String path) => sources[path];
 }
 
+/// Options that control coverage analysis and risk highlighting.
 class CoverageAnalysisConfig {
+  /// Creates analysis configuration.
   const CoverageAnalysisConfig({
     this.lineWarningThreshold = 80,
     this.branchWarningThreshold = 70,
@@ -26,13 +33,22 @@ class CoverageAnalysisConfig {
     this.excludes = const [],
   });
 
+  /// Minimum desired file line coverage percentage.
   final double lineWarningThreshold;
+
+  /// Minimum desired branch coverage percentage used by report views.
   final double branchWarningThreshold;
+
+  /// Glob-like include patterns. Empty means include every LCOV file.
   final List<String> includes;
+
+  /// Glob-like exclude patterns applied after [includes].
   final List<String> excludes;
 }
 
+/// Converts parsed LCOV records and source text into report models.
 class CoverageAnalyzer {
+  /// Analyzes parsed [records] using [sourceResolver] and [config].
   CoverageReport analyze({
     required List<LcovFileRecord> records,
     required SourceResolver sourceResolver,

@@ -1,3 +1,9 @@
+## 1.2.1
+
+- Add documentation comments for the public API exported by `coverage_lens`.
+- Add a runnable Dart example that shows programmatic LCOV parsing and
+  analysis.
+
 ## 1.2.0
 
 - Add optional one-page summary PDF generation for aggregate coverage

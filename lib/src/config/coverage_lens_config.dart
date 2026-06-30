@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
+/// Configuration loaded from `coverage_lens.yaml` or CLI flags.
 class CoverageLensConfig {
+  /// Creates a complete Coverage Lens configuration.
   const CoverageLensConfig({
     this.sourceRoot = '.',
     this.lcovPath = 'coverage/lcov.info',
@@ -16,20 +18,41 @@ class CoverageLensConfig {
     this.excludes = const [],
   });
 
+  /// Root directory used for resolving LCOV source paths.
   final String sourceRoot;
+
+  /// Single LCOV file path used when [lcovPaths] is empty.
   final String lcovPath;
+
+  /// Multiple LCOV file paths to merge before analysis.
   final List<String> lcovPaths;
+
+  /// Directory where generated reports and assets are written.
   final String outputDir;
+
+  /// Optional PNG or JPEG icon shown in generated summary PDFs.
   final String? summaryIcon;
+
+  /// Optional application or package name shown in generated summary PDFs.
   final String? projectName;
+
+  /// Minimum desired line coverage percentage.
   final double lineThreshold;
+
+  /// Minimum desired branch coverage percentage.
   final double branchThreshold;
+
+  /// Include patterns for LCOV source files.
   final List<String> includes;
+
+  /// Exclude patterns for generated files or other ignored sources.
   final List<String> excludes;
 
+  /// LCOV paths that should be read after applying single-path fallback.
   List<String> get effectiveLcovPaths =>
       lcovPaths.isEmpty ? [lcovPath] : lcovPaths;
 
+  /// Returns a copy with selected values replaced.
   CoverageLensConfig copyWith({
     String? sourceRoot,
     String? lcovPath,
@@ -56,6 +79,7 @@ class CoverageLensConfig {
     );
   }
 
+  /// Loads configuration from [path], or returns defaults when it is missing.
   static CoverageLensConfig loadFromFile(String path) {
     final file = File(path);
     if (!file.existsSync()) {

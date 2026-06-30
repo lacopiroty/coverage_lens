@@ -1,4 +1,6 @@
+/// Parser for LCOV trace files.
 class LcovParser {
+  /// Parses raw LCOV [input] into file records and warnings.
   LcovParseResult parse(String input) {
     final files = <LcovFileRecord>[];
     final warnings = <LcovParseWarning>[];
@@ -261,7 +263,9 @@ class LcovParser {
   }
 }
 
+/// Merges records for the same source file by summing hit counts.
 class LcovRecordMerger {
+  /// Returns one merged record per source file path.
   List<LcovFileRecord> merge(List<LcovFileRecord> records) {
     final filesByPath = <String, _MergedLcovFile>{};
     for (final record in records) {
@@ -276,21 +280,33 @@ class LcovRecordMerger {
   }
 }
 
+/// Result of parsing an LCOV document.
 class LcovParseResult {
+  /// Creates a parse result.
   const LcovParseResult({required this.files, required this.warnings});
 
+  /// Parsed source file records.
   final List<LcovFileRecord> files;
+
+  /// Non-fatal parse warnings.
   final List<LcovParseWarning> warnings;
 }
 
+/// Warning emitted while parsing LCOV input.
 class LcovParseWarning {
+  /// Creates a parse warning for an input line.
   const LcovParseWarning(this.lineNumber, this.message);
 
+  /// One-based line number in the LCOV input.
   final int lineNumber;
+
+  /// Human-readable warning message.
   final String message;
 }
 
+/// LCOV data for one `SF:` source file section.
 class LcovFileRecord {
+  /// Creates a source file record.
   const LcovFileRecord({
     required this.sourceFile,
     required this.lines,
@@ -304,36 +320,68 @@ class LcovFileRecord {
     this.branchHit,
   });
 
+  /// Source file path from the LCOV `SF:` field.
   final String sourceFile;
+
+  /// Line execution records from `DA:` fields.
   final List<LcovLineRecord> lines;
+
+  /// Function records from `FN:` and `FNDA:` fields.
   final List<LcovFunctionRecord> functions;
+
+  /// Branch records from `BRDA:` fields.
   final List<LcovBranchRecord> branches;
+
+  /// Optional total executable line count from `LF:`.
   final int? lineFound;
+
+  /// Optional covered executable line count from `LH:`.
   final int? lineHit;
+
+  /// Optional total function count from `FNF:`.
   final int? functionFound;
+
+  /// Optional covered function count from `FNH:`.
   final int? functionHit;
+
+  /// Optional total branch outcome count from `BRF:`.
   final int? branchFound;
+
+  /// Optional covered branch outcome count from `BRH:`.
   final int? branchHit;
 }
 
+/// LCOV execution count for one source line.
 class LcovLineRecord {
+  /// Creates a line record.
   const LcovLineRecord({required this.lineNumber, required this.hitCount});
 
+  /// One-based source line number.
   final int lineNumber;
+
+  /// Number of times the line executed.
   final int hitCount;
 }
 
+/// LCOV execution count for one function.
 class LcovFunctionRecord {
+  /// Creates a function record.
   const LcovFunctionRecord({
     required this.lineNumber,
     required this.name,
     required this.hitCount,
   });
 
+  /// One-based line number where the function is declared.
   final int lineNumber;
+
+  /// Function name reported by LCOV.
   final String name;
+
+  /// Number of times the function executed.
   final int hitCount;
 
+  /// Returns a copy with a different hit count.
   LcovFunctionRecord copyWith({int? hitCount}) {
     return LcovFunctionRecord(
       lineNumber: lineNumber,
@@ -343,7 +391,9 @@ class LcovFunctionRecord {
   }
 }
 
+/// LCOV execution count for one branch outcome.
 class LcovBranchRecord {
+  /// Creates a branch record.
   const LcovBranchRecord({
     required this.lineNumber,
     required this.blockNumber,
@@ -351,9 +401,16 @@ class LcovBranchRecord {
     required this.hitCount,
   });
 
+  /// One-based line number associated with the branch.
   final int lineNumber;
+
+  /// LCOV block number.
   final int blockNumber;
+
+  /// LCOV branch number inside [blockNumber].
   final int branchNumber;
+
+  /// Number of times this branch outcome executed.
   final int hitCount;
 }
 

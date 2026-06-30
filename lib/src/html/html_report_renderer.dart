@@ -1,15 +1,23 @@
 import '../model/coverage_models.dart';
 
+/// HTML report document and companion asset files.
 class HtmlReportOutput {
+  /// Creates generated HTML output.
   const HtmlReportOutput({required this.indexHtml, required this.assets});
 
+  /// Main `index.html` content.
   final String indexHtml;
+
+  /// Additional files keyed by output-relative path.
   final Map<String, String> assets;
 }
 
+/// Renders an analyzed coverage report as static HTML.
 class HtmlReportRenderer {
+  /// Renders only the main HTML document.
   String render(CoverageReport report) => renderReport(report).indexHtml;
 
+  /// Renders the main HTML document and lazily loaded source preview assets.
   HtmlReportOutput renderReport(CoverageReport report) {
     return HtmlReportOutput(
       indexHtml: _renderIndex(report),
