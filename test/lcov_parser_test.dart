@@ -33,4 +33,44 @@ void main() {
     expect(result.files.last.lines.single.lineNumber, 10);
     expect(result.warnings.single.message, contains('Invalid DA record'));
   });
+
+  test('merges duplicate file records by summing line function and branch hits',
+      () {
+    final first = LcovParser().parse('''
+SF:lib/a.dart
+FN:1,build
+FNDA:1,build
+DA:1,1
+DA:2,0
+BRDA:2,0,0,0
+end_of_record
+''');
+    final second = LcovParser().parse('''
+SF:lib/a.dart
+FN:1,build
+FNDA:2,build
+DA:1,2
+DA:2,1
+BRDA:2,0,0,3
+end_of_record
+''');
+
+    final merged = LcovRecordMerger().merge([
+      ...first.files,
+      ...second.files,
+    ]);
+
+    expect(merged, hasLength(1));
+    expect(merged.single.sourceFile, 'lib/a.dart');
+    expect(merged.single.lines.map((line) => line.lineNumber), [1, 2]);
+    expect(merged.single.lines.map((line) => line.hitCount), [3, 1]);
+    expect(merged.single.lineFound, 2);
+    expect(merged.single.lineHit, 2);
+    expect(merged.single.functions.single.hitCount, 3);
+    expect(merged.single.functionFound, 1);
+    expect(merged.single.functionHit, 1);
+    expect(merged.single.branches.single.hitCount, 3);
+    expect(merged.single.branchFound, 1);
+    expect(merged.single.branchHit, 1);
+  });
 }

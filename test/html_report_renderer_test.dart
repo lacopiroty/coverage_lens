@@ -106,12 +106,14 @@ void main() {
     expect(html, contains('function markPreviewLoaded(preview)'));
     expect(
       html,
-      contains('function syncPreviewLoadState(preview, frame, expectedSrc)'),
+      contains(
+        'function syncPreviewLoadState(preview, frame, expectedSrc, detailsNode, token)',
+      ),
     );
     expect(html, contains('function unloadPreview(detailsNode)'));
     expect(html, contains("frame.src = 'about:blank';"));
     expect(html, contains("frame.removeAttribute('data-preview-active-src');"));
-    expect(html, contains('window.setTimeout(() => syncPreviewLoadState'));
+    expect(html, contains('function schedulePreviewSync('));
     expect(
       html,
       contains(
@@ -142,6 +144,204 @@ void main() {
       ),
     );
     expect(html, isNot(contains('table class="source"')));
+  });
+
+  test('renders resilient preview loader for nested file tree previews', () {
+    const file = CoverageFile(
+      path:
+          'modules/data/lib/src/features/deep/tree/preview_loader_target.dart',
+      summary: CoverageSummary(
+        executableLines: 1,
+        coveredLines: 0,
+        uncoveredLines: 1,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 1,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      lines: [
+        CoverageLine(
+          number: 1,
+          hitCount: 0,
+          status: CoverageLineStatus.uncovered,
+          text: 'void target() {}',
+        ),
+      ],
+      uncoveredRanges: [CoverageRange(start: 1, end: 1)],
+      hasMissingSource: false,
+      score: 10,
+      isBelowThreshold: true,
+    );
+
+    final report = CoverageReport(
+      generatedAt: DateTime.utc(2026, 6, 26, 12),
+      summary: file.summary,
+      groups: const [],
+      hotspots: const [file],
+      warnings: const [],
+      files: const [file],
+    );
+
+    final html = HtmlReportRenderer().render(report);
+
+    expect(html, contains('function frameMatchesPreviewSource('));
+    expect(html, contains('new URL(expectedSrc, window.location.href).href'));
+    expect(html, contains('frame.contentWindow.location.href'));
+    expect(html, contains('function schedulePreviewSync('));
+    expect(html, contains('function syncTreeFilePreview(detailsNode)'));
+    expect(html, contains('requestAnimationFrame'));
+    expect(html, isNot(contains('markPreviewLoaded(preview);\n  }')));
+  });
+
+  test('keeps only one file preview open at a time', () {
+    const firstFile = CoverageFile(
+      path: 'lib/first.dart',
+      summary: CoverageSummary(
+        executableLines: 1,
+        coveredLines: 0,
+        uncoveredLines: 1,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 1,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      lines: [
+        CoverageLine(
+          number: 1,
+          hitCount: 0,
+          status: CoverageLineStatus.uncovered,
+          text: 'void first() {}',
+        ),
+      ],
+      uncoveredRanges: [CoverageRange(start: 1, end: 1)],
+      hasMissingSource: false,
+      score: 10,
+      isBelowThreshold: true,
+    );
+    const secondFile = CoverageFile(
+      path: 'lib/deep/second.dart',
+      summary: CoverageSummary(
+        executableLines: 1,
+        coveredLines: 0,
+        uncoveredLines: 1,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 1,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      lines: [
+        CoverageLine(
+          number: 1,
+          hitCount: 0,
+          status: CoverageLineStatus.uncovered,
+          text: 'void second() {}',
+        ),
+      ],
+      uncoveredRanges: [CoverageRange(start: 1, end: 1)],
+      hasMissingSource: false,
+      score: 10,
+      isBelowThreshold: true,
+    );
+
+    final report = CoverageReport(
+      generatedAt: DateTime.utc(2026, 6, 26, 12),
+      summary: const CoverageSummary(
+        executableLines: 2,
+        coveredLines: 0,
+        uncoveredLines: 2,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 2,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      groups: const [],
+      hotspots: const [firstFile, secondFile],
+      warnings: const [],
+      files: const [firstFile, secondFile],
+    );
+
+    final html = HtmlReportRenderer().render(report);
+
+    expect(
+        html, contains('function closeOtherFilePreviews(activeDetailsNode)'));
+    expect(
+      html,
+      contains("document.querySelectorAll('.tree-file-detail[open]')"),
+    );
+    expect(html, contains('if (detailsNode === activeDetailsNode) return;'));
+    expect(html, contains('detailsNode.open = false;'));
+    expect(html, contains('unloadPreview(detailsNode);'));
+    expect(html, contains('closeOtherFilePreviews(detailsNode);'));
+    final loadPreviewScript = html.substring(
+      html.indexOf('function loadPreview(detailsNode)'),
+    );
+    expect(
+      loadPreviewScript.indexOf('closeOtherFilePreviews(detailsNode);'),
+      lessThan(
+        loadPreviewScript.indexOf(
+          'preview.getAttribute(\'data-preview-loaded\')',
+        ),
+      ),
+    );
+  });
+
+  test('resizes source preview frame to compact content height', () {
+    const file = CoverageFile(
+      path: 'lib/small.dart',
+      summary: CoverageSummary(
+        executableLines: 1,
+        coveredLines: 1,
+        uncoveredLines: 0,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 0,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      lines: [
+        CoverageLine(
+          number: 1,
+          hitCount: 1,
+          status: CoverageLineStatus.covered,
+          text: 'void small() {}',
+        ),
+      ],
+      uncoveredRanges: [],
+      hasMissingSource: false,
+      score: 0,
+      isBelowThreshold: false,
+    );
+
+    final report = CoverageReport(
+      generatedAt: DateTime.utc(2026, 6, 26, 12),
+      summary: file.summary,
+      groups: const [],
+      hotspots: const [],
+      warnings: const [],
+      files: const [file],
+    );
+
+    final html = HtmlReportRenderer().render(report);
+
+    expect(html, contains('function resizePreviewFrame(preview, frame)'));
+    expect(html, contains("doc.querySelector('.source-preview')"));
+    expect(html, contains('const minHeight = 140;'));
+    expect(html, contains('const maxHeight = 560;'));
+    expect(html, contains('source.getBoundingClientRect().height'));
+    expect(html, contains("frame.style.height = height + 'px';"));
+    expect(
+      html,
+      contains("preview.setAttribute('data-preview-height', String(height));"),
+    );
+    expect(html, contains('function resetPreviewFrameHeight(preview, frame)'));
+    expect(html, contains("frame.style.height = '';"));
+    expect(html, contains('resizePreviewFrame(preview, frame);'));
+    expect(html, contains('bindPreviewAutoResize(preview, frame);'));
+    expect(
+      html,
+      contains(
+        '.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block; height: 560px; min-height: 140px;',
+      ),
+    );
   });
 
   test('renders extra coverage insights', () {
@@ -262,9 +462,13 @@ void main() {
     expect(
       html,
       contains(
-        '.summary-grid { grid-template-columns: repeat(5, minmax(132px, 1fr)); overflow-x: auto; }',
+        '.summary-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); overflow-x: visible; }',
       ),
     );
+    expect(
+        html,
+        isNot(contains(
+            'summary-grid { grid-template-columns: repeat(5, minmax(132px, 1fr)); overflow-x: auto; }')));
     expect(html, contains('.hint-card::before'));
     expect(html, contains('.hint-card:hover::before'));
     expect(html, contains('.hint-card:focus-visible::before'));

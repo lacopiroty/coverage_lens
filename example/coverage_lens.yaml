@@ -1,5 +1,8 @@
 sourceRoot: .
-lcovPath: coverage/lcov.info
+lcovPaths:
+  - coverage/lcov.info
+  - modules/**/coverage/lcov.info
+  - packages/**/coverage/lcov.info
 outputDir: build/coverage_lens
 thresholds:
   line: 80

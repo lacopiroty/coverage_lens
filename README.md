@@ -58,6 +58,25 @@ dart run coverage_lens:coverage_lens report \
   --out build/coverage_lens
 ```
 
+You can pass `--lcov` more than once. This is useful when a Flutter app cannot
+run tests as one workspace and each package writes its own LCOV file:
+
+```bash
+dart run coverage_lens:coverage_lens report \
+  --lcov coverage/lcov.info \
+  --lcov modules/**/coverage/lcov.info \
+  --lcov packages/**/coverage/lcov.info \
+  --source . \
+  --out build/coverage_lens
+```
+
+Coverage Lens merges matching `SF:` records before building the report. When an
+LCOV file is inside a package coverage folder, for example
+`modules/core/coverage/lcov.info`, package-relative sources such as
+`SF:lib/src/file.dart` are shown as `modules/core/lib/src/file.dart`.
+Glob entries that do not match any files are ignored as long as at least one
+LCOV file is found.
+
 Open `build/coverage_lens/index.html` in a browser.
 
 The report output is a folder. Keep `index.html`, `files/`, and `assets/`
@@ -77,7 +96,10 @@ Command-line options override values from the config file.
 
 ```yaml
 sourceRoot: .
-lcovPath: coverage/lcov.info
+lcovPaths:
+  - coverage/lcov.info
+  - modules/**/coverage/lcov.info
+  - packages/**/coverage/lcov.info
 outputDir: build/coverage_lens
 thresholds:
   line: 80

@@ -1,6 +1,6 @@
 name: coverage_lens
 description: Static HTML coverage reports for Dart and Flutter LCOV output with compact source previews and threshold checks.
-version: 1.0.1
+version: 1.0.2
 homepage: https://github.com/lacopiroty/coverage_lens
 repository: https://github.com/lacopiroty/coverage_lens
 issue_tracker: https://github.com/lacopiroty/coverage_lens/issues

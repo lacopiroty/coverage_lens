@@ -261,6 +261,21 @@ class LcovParser {
   }
 }
 
+class LcovRecordMerger {
+  List<LcovFileRecord> merge(List<LcovFileRecord> records) {
+    final filesByPath = <String, _MergedLcovFile>{};
+    for (final record in records) {
+      filesByPath
+          .putIfAbsent(
+              record.sourceFile, () => _MergedLcovFile(record.sourceFile))
+          .add(record);
+    }
+    final merged = filesByPath.values.map((file) => file.toRecord()).toList()
+      ..sort((a, b) => a.sourceFile.compareTo(b.sourceFile));
+    return List.unmodifiable(merged);
+  }
+}
+
 class LcovParseResult {
   const LcovParseResult({required this.files, required this.warnings});
 
@@ -368,6 +383,80 @@ class _MutableLcovFile {
       functionHit: functionHit,
       branchFound: branchFound,
       branchHit: branchHit,
+    );
+  }
+}
+
+class _MergedLcovFile {
+  _MergedLcovFile(this.sourceFile);
+
+  final String sourceFile;
+  final lines = <int, LcovLineRecord>{};
+  final functions = <String, LcovFunctionRecord>{};
+  final branches = <String, LcovBranchRecord>{};
+
+  void add(LcovFileRecord record) {
+    for (final line in record.lines) {
+      final existing = lines[line.lineNumber];
+      lines[line.lineNumber] = LcovLineRecord(
+        lineNumber: line.lineNumber,
+        hitCount: (existing?.hitCount ?? 0) + line.hitCount,
+      );
+    }
+    for (final function in record.functions) {
+      final key = '${function.lineNumber}\u0000${function.name}';
+      final existing = functions[key];
+      functions[key] = LcovFunctionRecord(
+        lineNumber: function.lineNumber,
+        name: function.name,
+        hitCount: (existing?.hitCount ?? 0) + function.hitCount,
+      );
+    }
+    for (final branch in record.branches) {
+      final key =
+          '${branch.lineNumber}\u0000${branch.blockNumber}\u0000${branch.branchNumber}';
+      final existing = branches[key];
+      branches[key] = LcovBranchRecord(
+        lineNumber: branch.lineNumber,
+        blockNumber: branch.blockNumber,
+        branchNumber: branch.branchNumber,
+        hitCount: (existing?.hitCount ?? 0) + branch.hitCount,
+      );
+    }
+  }
+
+  LcovFileRecord toRecord() {
+    final mergedLines = lines.values.toList()
+      ..sort((a, b) => a.lineNumber.compareTo(b.lineNumber));
+    final mergedFunctions = functions.values.toList()
+      ..sort((a, b) {
+        final byLine = a.lineNumber.compareTo(b.lineNumber);
+        return byLine == 0 ? a.name.compareTo(b.name) : byLine;
+      });
+    final mergedBranches = branches.values.toList()
+      ..sort((a, b) {
+        final byLine = a.lineNumber.compareTo(b.lineNumber);
+        if (byLine != 0) {
+          return byLine;
+        }
+        final byBlock = a.blockNumber.compareTo(b.blockNumber);
+        return byBlock == 0
+            ? a.branchNumber.compareTo(b.branchNumber)
+            : byBlock;
+      });
+
+    return LcovFileRecord(
+      sourceFile: sourceFile,
+      lines: List.unmodifiable(mergedLines),
+      functions: List.unmodifiable(mergedFunctions),
+      branches: List.unmodifiable(mergedBranches),
+      lineFound: mergedLines.length,
+      lineHit: mergedLines.where((line) => line.hitCount > 0).length,
+      functionFound: mergedFunctions.length,
+      functionHit:
+          mergedFunctions.where((function) => function.hitCount > 0).length,
+      branchFound: mergedBranches.length,
+      branchHit: mergedBranches.where((branch) => branch.hitCount > 0).length,
     );
   }
 }

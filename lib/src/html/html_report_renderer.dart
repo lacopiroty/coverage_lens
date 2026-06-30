@@ -490,9 +490,9 @@ details[open] > summary .chevron { transform: rotate(90deg); }
 .preview-state { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; color: var(--muted); font-size: 12px; margin: 0; padding: 12px; }
 .tree-file-preview[data-preview-loaded="true"] .preview-state { display: none; }
 .tree-file-preview[data-preview-error="true"] .preview-state { color: var(--red); display: block; }
-.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block; height: 560px; width: 100%; }
+.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block; height: 560px; min-height: 140px; width: 100%; }
 .tree-file-preview[data-preview-loaded="true"] .source-preview-frame { display: block; }
-@media (max-width: 900px) { .topbar { align-items: flex-start; flex-direction: column; } .summary-section { padding-left: 16px; padding-right: 16px; } .summary-grid { grid-template-columns: repeat(5, minmax(132px, 1fr)); overflow-x: auto; } .panel, .quality { margin-left: 16px; margin-right: 16px; } .insights-grid { grid-template-columns: 1fr 1fr; } .tree-toolbar { align-items: flex-start; grid-template-columns: 1fr; flex-direction: column; } .tree-actions { justify-content: flex-start; } .attention-file, .tree-row { align-items: flex-start; grid-template-columns: 1fr; } .tree-row { padding-left: calc(14px + (var(--depth) * 16px)); } .attention-meta, .tree-meta { justify-content: flex-start; white-space: normal; } }
+@media (max-width: 900px) { .topbar { align-items: flex-start; flex-direction: column; } .summary-section { padding-left: 16px; padding-right: 16px; } .summary-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); overflow-x: visible; } .panel, .quality { margin-left: 16px; margin-right: 16px; } .insights-grid { grid-template-columns: 1fr 1fr; } .tree-toolbar { align-items: flex-start; grid-template-columns: 1fr; flex-direction: column; } .tree-actions { justify-content: flex-start; } .attention-file, .tree-row { align-items: flex-start; grid-template-columns: 1fr; } .tree-row { padding-left: calc(14px + (var(--depth) * 16px)); } .attention-meta, .tree-meta { justify-content: flex-start; white-space: normal; } }
 ''';
   }
 
@@ -552,18 +552,92 @@ function resetPreviewState(preview) {
   if (state) state.textContent = 'Loading source preview...';
 }
 
-function syncPreviewLoadState(preview, frame, expectedSrc) {
-  if (!preview || !frame || preview.getAttribute('data-preview-loaded') === 'true') return;
-  if (frame.getAttribute('data-preview-active-src') !== expectedSrc || frame.getAttribute('src') !== expectedSrc) return;
+function nextPreviewToken(preview) {
+  const next = String((Number(preview.getAttribute('data-preview-token')) || 0) + 1);
+  preview.setAttribute('data-preview-token', next);
+  return next;
+}
+
+function isPreviewRequestCurrent(preview, frame, expectedSrc, token, detailsNode) {
+  if (!preview || !frame || preview.getAttribute('data-preview-token') !== token) return false;
+  if (detailsNode && !detailsNode.open) return false;
+  return frame.getAttribute('data-preview-active-src') === expectedSrc &&
+    frame.getAttribute('src') === expectedSrc;
+}
+
+function frameMatchesPreviewSource(frame, expectedSrc) {
+  if (!frame || frame.getAttribute('src') !== expectedSrc) return false;
   try {
+    const expectedUrl = new URL(expectedSrc, window.location.href).href;
+    if (frame.contentWindow.location.href !== expectedUrl) return false;
     const doc = frame.contentDocument;
-    if (doc && doc.readyState !== 'loading' && doc.body) {
-      markPreviewLoaded(preview);
-    }
+    return Boolean(doc && doc.readyState !== 'loading' && doc.body);
   } catch (_) {
     // Cross-origin access should not happen for generated local files, but keep
     // iframe loading resilient if a report is hosted from an unusual location.
+    return frame.getAttribute('src') === expectedSrc;
   }
+}
+
+function resizePreviewFrame(preview, frame) {
+  if (!preview || !frame) return;
+  try {
+    const doc = frame.contentDocument;
+    const source = doc ? doc.querySelector('.source-preview') : null;
+    if (!source) return;
+    const minHeight = 140;
+    const maxHeight = 560;
+    const measuredHeight = Math.ceil(source.getBoundingClientRect().height);
+    const contentHeight = Math.max(measuredHeight, source.scrollHeight);
+    const height = Math.max(minHeight, Math.min(maxHeight, contentHeight));
+    frame.style.height = height + 'px';
+    preview.setAttribute('data-preview-height', String(height));
+  } catch (_) {
+    // Keep the default fixed frame height if browser restrictions block access.
+  }
+}
+
+function resetPreviewFrameHeight(preview, frame) {
+  if (frame) frame.style.height = '';
+  if (preview) preview.removeAttribute('data-preview-height');
+}
+
+function bindPreviewAutoResize(preview, frame) {
+  if (!preview || !frame) return;
+  try {
+    const doc = frame.contentDocument;
+    if (!doc || !doc.body || doc.body.getAttribute('data-preview-resize-bound') === 'true') return;
+    doc.body.setAttribute('data-preview-resize-bound', 'true');
+    doc.addEventListener('toggle', () => {
+      window.requestAnimationFrame(() => resizePreviewFrame(preview, frame));
+    }, true);
+  } catch (_) {
+    // Preview stays usable with the default height if resize observation fails.
+  }
+}
+
+function syncPreviewLoadState(preview, frame, expectedSrc, detailsNode, token) {
+  if (!isPreviewRequestCurrent(preview, frame, expectedSrc, token, detailsNode)) return false;
+  if (preview.getAttribute('data-preview-loaded') === 'true') return true;
+  if (!frameMatchesPreviewSource(frame, expectedSrc)) return false;
+  resizePreviewFrame(preview, frame);
+  bindPreviewAutoResize(preview, frame);
+  markPreviewLoaded(preview);
+  return true;
+}
+
+function schedulePreviewSync(preview, frame, expectedSrc, detailsNode, token, attempt) {
+  if (syncPreviewLoadState(preview, frame, expectedSrc, detailsNode, token)) return;
+  if (!isPreviewRequestCurrent(preview, frame, expectedSrc, token, detailsNode)) return;
+  if (attempt >= 30) {
+    markPreviewError(preview);
+    return;
+  }
+  const delay = attempt < 4 ? 100 : 350;
+  window.setTimeout(
+    () => schedulePreviewSync(preview, frame, expectedSrc, detailsNode, token, attempt + 1),
+    delay,
+  );
 }
 
 function unloadPreview(detailsNode) {
@@ -573,46 +647,84 @@ function unloadPreview(detailsNode) {
   const frame = preview.querySelector('iframe');
   if (!frame) return;
 
+  nextPreviewToken(preview);
   frame.removeAttribute('data-preview-active-src');
   frame.src = 'about:blank';
+  resetPreviewFrameHeight(preview, frame);
   resetPreviewState(preview);
+}
+
+function closeOtherFilePreviews(activeDetailsNode) {
+  if (!activeDetailsNode || !activeDetailsNode.matches || !activeDetailsNode.matches('.tree-file-detail')) return;
+  document.querySelectorAll('.tree-file-detail[open]').forEach((detailsNode) => {
+    if (detailsNode === activeDetailsNode) return;
+    detailsNode.open = false;
+    unloadPreview(detailsNode);
+  });
+}
+
+function syncTreeFilePreview(detailsNode) {
+  if (!detailsNode || !detailsNode.matches || !detailsNode.matches('.tree-file-detail')) return;
+  window.requestAnimationFrame(() => {
+    if (detailsNode.open) {
+      loadPreview(detailsNode);
+    } else {
+      unloadPreview(detailsNode);
+    }
+  });
+}
+
+function syncOpenPreviewsWithin(node) {
+  if (!node || !node.querySelectorAll) return;
+  node.querySelectorAll('.tree-file-detail[open]').forEach(syncTreeFilePreview);
+}
+
+function unloadPreviewsWithin(node) {
+  if (!node || !node.querySelectorAll) return;
+  node.querySelectorAll('.tree-file-detail').forEach(unloadPreview);
 }
 
 function loadPreview(detailsNode) {
   if (!detailsNode || !detailsNode.matches || !detailsNode.matches('.tree-file-detail')) return;
   const preview = detailsNode.querySelector('[data-preview-src]');
-  if (!preview || preview.getAttribute('data-preview-loaded') === 'true') return;
+  if (!preview) return;
   const frame = preview.querySelector('iframe');
   if (!frame) return;
   const previewSrc = preview.getAttribute('data-preview-src');
   if (!previewSrc) return;
-
-  if (preview.getAttribute('data-preview-loading') === 'true') {
-    syncPreviewLoadState(preview, frame, previewSrc);
+  closeOtherFilePreviews(detailsNode);
+  if (preview.getAttribute('data-preview-loaded') === 'true' && frameMatchesPreviewSource(frame, previewSrc)) {
+    resizePreviewFrame(preview, frame);
     return;
   }
+
+  if (preview.getAttribute('data-preview-loading') === 'true') {
+    const activeToken = preview.getAttribute('data-preview-token') || '';
+    schedulePreviewSync(preview, frame, previewSrc, detailsNode, activeToken, 0);
+    return;
+  }
+  resetPreviewState(preview);
+  resetPreviewFrameHeight(preview, frame);
+  const token = nextPreviewToken(preview);
   preview.setAttribute('data-preview-loading', 'true');
   frame.setAttribute('data-preview-active-src', previewSrc);
 
   frame.addEventListener('load', () => {
-    if (frame.getAttribute('data-preview-active-src') !== previewSrc) return;
-    markPreviewLoaded(preview);
+    syncPreviewLoadState(preview, frame, previewSrc, detailsNode, token);
   }, { once: true });
 
   frame.addEventListener('error', () => {
-    if (frame.getAttribute('data-preview-active-src') !== previewSrc) return;
+    if (!isPreviewRequestCurrent(preview, frame, previewSrc, token, detailsNode)) return;
     markPreviewError(preview);
   }, { once: true });
 
   if (frame.getAttribute('src') !== previewSrc) {
     frame.src = previewSrc;
   } else {
-    syncPreviewLoadState(preview, frame, previewSrc);
+    syncPreviewLoadState(preview, frame, previewSrc, detailsNode, token);
   }
 
-  window.setTimeout(() => syncPreviewLoadState(preview, frame, previewSrc), 0);
-  window.setTimeout(() => syncPreviewLoadState(preview, frame, previewSrc), 150);
-  window.setTimeout(() => syncPreviewLoadState(preview, frame, previewSrc), 1000);
+  schedulePreviewSync(preview, frame, previewSrc, detailsNode, token, 0);
 }
 
 function revealTarget(id) {
@@ -624,7 +736,7 @@ function revealTarget(id) {
     if (parent.tagName && parent.tagName.toLowerCase() === 'details') {
       parent.open = true;
       parent.style.display = '';
-      loadPreview(parent);
+      syncTreeFilePreview(parent);
     }
     parent = parent.parentElement;
   }
@@ -646,12 +758,18 @@ document.querySelectorAll('[data-open-target]').forEach((link) => {
 });
 
 document.querySelectorAll('.tree-file-detail').forEach((detailsNode) => {
-  detailsNode.addEventListener('toggle', () => {
-    if (detailsNode.open) {
-      loadPreview(detailsNode);
-    } else {
-      unloadPreview(detailsNode);
-    }
+  detailsNode.addEventListener('toggle', () => syncTreeFilePreview(detailsNode));
+});
+
+document.querySelectorAll('.tree-folder').forEach((folder) => {
+  folder.addEventListener('toggle', () => {
+    window.requestAnimationFrame(() => {
+      if (folder.open) {
+        syncOpenPreviewsWithin(folder);
+      } else {
+        unloadPreviewsWithin(folder);
+      }
+    });
   });
 });
 
@@ -666,6 +784,11 @@ document.querySelectorAll('[data-tree-action]').forEach((button) => {
     const open = button.getAttribute('data-tree-action') === 'expand';
     document.querySelectorAll('.tree-folder').forEach((folder) => {
       folder.open = open;
+      if (open) {
+        syncOpenPreviewsWithin(folder);
+      } else {
+        unloadPreviewsWithin(folder);
+      }
     });
   });
 });

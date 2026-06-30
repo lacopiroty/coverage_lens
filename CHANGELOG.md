@@ -1,3 +1,13 @@
+## 1.0.2
+
+- Support multiple LCOV inputs through repeated `--lcov` options.
+- Support `lcovPaths` config entries with glob patterns.
+- Merge duplicate LCOV `SF:` records and rebase package-relative source paths from nested package coverage files.
+- Improve nested source preview loading by validating the loaded iframe document before marking it ready.
+- Keep only one source preview open at a time and unload closed previews to reduce browser memory use.
+- Resize source preview frames to compact content height for short files while preserving a maximum height for long files.
+- Wrap summary tiles on smaller screens instead of showing a horizontal scrollbar.
+
 ## 1.0.1
 
 - Improve source preview loading reliability in generated reports.

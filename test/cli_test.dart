@@ -76,4 +76,115 @@ void main() {
     expect(previewHtml, contains('return a + b;'));
     expect(previewHtml, contains('../assets/source_preview.css'));
   });
+
+  test('merges multiple lcov files and rebases package relative sources',
+      () async {
+    final projectDir = Directory('build/test_cli_multi_project');
+    final outDir = Directory('build/test_cli_multi_report');
+    if (projectDir.existsSync()) {
+      projectDir.deleteSync(recursive: true);
+    }
+    if (outDir.existsSync()) {
+      outDir.deleteSync(recursive: true);
+    }
+
+    File('${projectDir.path}/lib/root.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('int root() => 1;\n');
+    File('${projectDir.path}/modules/core/lib/core.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('int core() => 2;\n');
+    File('${projectDir.path}/coverage/lcov.info')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('''
+SF:lib/root.dart
+DA:1,1
+LF:1
+LH:1
+end_of_record
+''');
+    File('${projectDir.path}/modules/core/coverage/lcov.info')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('''
+SF:lib/core.dart
+DA:1,1
+LF:1
+LH:1
+end_of_record
+''');
+
+    final exitCode = await CoverageLensCli().run([
+      'report',
+      '--lcov',
+      '${projectDir.path}/coverage/lcov.info',
+      '--lcov',
+      '${projectDir.path}/modules/**/coverage/lcov.info',
+      '--source',
+      projectDir.path,
+      '--out',
+      outDir.path,
+      '--fail-under-lines',
+      '0',
+      '--fail-under-branches',
+      '0',
+    ]);
+
+    final indexHtml = File('${outDir.path}/index.html').readAsStringSync();
+
+    expect(exitCode, 0);
+    expect(indexHtml, contains('lib/root.dart'));
+    expect(indexHtml, contains('modules/core/lib/core.dart'));
+    expect(
+      File('${outDir.path}/files/modules-core-lib-core-dart.html').existsSync(),
+      isTrue,
+    );
+  });
+
+  test('reads lcovPaths from config and expands globs', () async {
+    final projectDir = Directory('build/test_cli_config_paths_project');
+    final outDir = Directory('build/test_cli_config_paths_report');
+    final configFile = File('build/test_cli_config_paths.yaml');
+    if (projectDir.existsSync()) {
+      projectDir.deleteSync(recursive: true);
+    }
+    if (outDir.existsSync()) {
+      outDir.deleteSync(recursive: true);
+    }
+
+    File('${projectDir.path}/packages/nested/lib/nested.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('int nested() => 3;\n');
+    File('${projectDir.path}/packages/nested/coverage/lcov.info')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('''
+SF:lib/nested.dart
+DA:1,1
+LF:1
+LH:1
+end_of_record
+''');
+    configFile
+      ..createSync(recursive: true)
+      ..writeAsStringSync('''
+sourceRoot: ${projectDir.path}
+outputDir: ${outDir.path}
+lcovPaths:
+  - ${projectDir.path}/packages/**/coverage/lcov.info
+  - ${projectDir.path}/missing/**/coverage/lcov.info
+thresholds:
+  line: 0
+  branch: 0
+''');
+
+    final exitCode = await CoverageLensCli().run([
+      'report',
+      '--config',
+      configFile.path,
+    ]);
+
+    final indexHtml = File('${outDir.path}/index.html').readAsStringSync();
+
+    expect(exitCode, 0);
+    expect(indexHtml, contains('packages/nested/lib/nested.dart'));
+  });
 }

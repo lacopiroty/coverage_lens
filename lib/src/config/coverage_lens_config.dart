@@ -6,6 +6,7 @@ class CoverageLensConfig {
   const CoverageLensConfig({
     this.sourceRoot = '.',
     this.lcovPath = 'coverage/lcov.info',
+    this.lcovPaths = const [],
     this.outputDir = 'build/coverage_lens',
     this.lineThreshold = 80,
     this.branchThreshold = 70,
@@ -15,15 +16,20 @@ class CoverageLensConfig {
 
   final String sourceRoot;
   final String lcovPath;
+  final List<String> lcovPaths;
   final String outputDir;
   final double lineThreshold;
   final double branchThreshold;
   final List<String> includes;
   final List<String> excludes;
 
+  List<String> get effectiveLcovPaths =>
+      lcovPaths.isEmpty ? [lcovPath] : lcovPaths;
+
   CoverageLensConfig copyWith({
     String? sourceRoot,
     String? lcovPath,
+    List<String>? lcovPaths,
     String? outputDir,
     double? lineThreshold,
     double? branchThreshold,
@@ -33,6 +39,7 @@ class CoverageLensConfig {
     return CoverageLensConfig(
       sourceRoot: sourceRoot ?? this.sourceRoot,
       lcovPath: lcovPath ?? this.lcovPath,
+      lcovPaths: lcovPaths ?? this.lcovPaths,
       outputDir: outputDir ?? this.outputDir,
       lineThreshold: lineThreshold ?? this.lineThreshold,
       branchThreshold: branchThreshold ?? this.branchThreshold,
@@ -59,10 +66,14 @@ class CoverageLensConfig {
         thresholds is YamlMap && thresholds['branch'] != null
             ? _number(thresholds['branch'], 'thresholds.branch')
             : 70.0;
+    final lcovPaths = yaml.containsKey('lcovPaths')
+        ? _stringList(yaml['lcovPaths'], 'lcovPaths')
+        : const <String>[];
 
     return CoverageLensConfig(
       sourceRoot: _string(yaml['sourceRoot'], 'sourceRoot') ?? '.',
       lcovPath: _string(yaml['lcovPath'], 'lcovPath') ?? 'coverage/lcov.info',
+      lcovPaths: lcovPaths,
       outputDir:
           _string(yaml['outputDir'], 'outputDir') ?? 'build/coverage_lens',
       lineThreshold: lineThreshold,
