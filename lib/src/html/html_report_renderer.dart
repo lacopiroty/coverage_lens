@@ -531,25 +531,88 @@ body { background: #fbfcfe; color: var(--text); font-family: -apple-system, Blin
   String _script() {
     return '''
 <script>
+function markPreviewLoaded(preview) {
+  preview.setAttribute('data-preview-loaded', 'true');
+  preview.removeAttribute('data-preview-loading');
+  preview.removeAttribute('data-preview-error');
+}
+
+function markPreviewError(preview) {
+  preview.removeAttribute('data-preview-loading');
+  preview.setAttribute('data-preview-error', 'true');
+  const state = preview.querySelector('.preview-state');
+  if (state) state.textContent = 'Could not load source preview.';
+}
+
+function resetPreviewState(preview) {
+  preview.setAttribute('data-preview-loaded', 'false');
+  preview.removeAttribute('data-preview-loading');
+  preview.removeAttribute('data-preview-error');
+  const state = preview.querySelector('.preview-state');
+  if (state) state.textContent = 'Loading source preview...';
+}
+
+function syncPreviewLoadState(preview, frame, expectedSrc) {
+  if (!preview || !frame || preview.getAttribute('data-preview-loaded') === 'true') return;
+  if (frame.getAttribute('data-preview-active-src') !== expectedSrc || frame.getAttribute('src') !== expectedSrc) return;
+  try {
+    const doc = frame.contentDocument;
+    if (doc && doc.readyState !== 'loading' && doc.body) {
+      markPreviewLoaded(preview);
+    }
+  } catch (_) {
+    // Cross-origin access should not happen for generated local files, but keep
+    // iframe loading resilient if a report is hosted from an unusual location.
+  }
+}
+
+function unloadPreview(detailsNode) {
+  if (!detailsNode || !detailsNode.matches || !detailsNode.matches('.tree-file-detail')) return;
+  const preview = detailsNode.querySelector('[data-preview-src]');
+  if (!preview) return;
+  const frame = preview.querySelector('iframe');
+  if (!frame) return;
+
+  frame.removeAttribute('data-preview-active-src');
+  frame.src = 'about:blank';
+  resetPreviewState(preview);
+}
+
 function loadPreview(detailsNode) {
   if (!detailsNode || !detailsNode.matches || !detailsNode.matches('.tree-file-detail')) return;
   const preview = detailsNode.querySelector('[data-preview-src]');
   if (!preview || preview.getAttribute('data-preview-loaded') === 'true') return;
   const frame = preview.querySelector('iframe');
   if (!frame) return;
+  const previewSrc = preview.getAttribute('data-preview-src');
+  if (!previewSrc) return;
+
+  if (preview.getAttribute('data-preview-loading') === 'true') {
+    syncPreviewLoadState(preview, frame, previewSrc);
+    return;
+  }
+  preview.setAttribute('data-preview-loading', 'true');
+  frame.setAttribute('data-preview-active-src', previewSrc);
 
   frame.addEventListener('load', () => {
-    preview.setAttribute('data-preview-loaded', 'true');
-    preview.removeAttribute('data-preview-error');
+    if (frame.getAttribute('data-preview-active-src') !== previewSrc) return;
+    markPreviewLoaded(preview);
   }, { once: true });
 
   frame.addEventListener('error', () => {
-    preview.setAttribute('data-preview-error', 'true');
-    const state = preview.querySelector('.preview-state');
-    if (state) state.textContent = 'Could not load source preview.';
+    if (frame.getAttribute('data-preview-active-src') !== previewSrc) return;
+    markPreviewError(preview);
   }, { once: true });
 
-  frame.src = preview.getAttribute('data-preview-src');
+  if (frame.getAttribute('src') !== previewSrc) {
+    frame.src = previewSrc;
+  } else {
+    syncPreviewLoadState(preview, frame, previewSrc);
+  }
+
+  window.setTimeout(() => syncPreviewLoadState(preview, frame, previewSrc), 0);
+  window.setTimeout(() => syncPreviewLoadState(preview, frame, previewSrc), 150);
+  window.setTimeout(() => syncPreviewLoadState(preview, frame, previewSrc), 1000);
 }
 
 function revealTarget(id) {
@@ -586,6 +649,8 @@ document.querySelectorAll('.tree-file-detail').forEach((detailsNode) => {
   detailsNode.addEventListener('toggle', () => {
     if (detailsNode.open) {
       loadPreview(detailsNode);
+    } else {
+      unloadPreview(detailsNode);
     }
   });
 });

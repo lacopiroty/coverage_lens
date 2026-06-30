@@ -1,3 +1,9 @@
+## 1.0.1
+
+- Improve source preview loading reliability in generated reports.
+- Release source preview iframe contents when a file preview is collapsed to reduce browser memory use.
+- Keep generated report assets split across `index.html`, `files/`, and `assets/` for smaller main HTML output.
+
 ## 1.0.0
 
 - Initial release.

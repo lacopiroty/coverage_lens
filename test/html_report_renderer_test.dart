@@ -103,6 +103,15 @@ void main() {
     expect(html, contains('data-preview-src="files/lib-a-dart.html"'));
     expect(html, contains('class="source-preview-frame"'));
     expect(html, isNot(contains('loading="lazy"')));
+    expect(html, contains('function markPreviewLoaded(preview)'));
+    expect(
+      html,
+      contains('function syncPreviewLoadState(preview, frame, expectedSrc)'),
+    );
+    expect(html, contains('function unloadPreview(detailsNode)'));
+    expect(html, contains("frame.src = 'about:blank';"));
+    expect(html, contains("frame.removeAttribute('data-preview-active-src');"));
+    expect(html, contains('window.setTimeout(() => syncPreviewLoadState'));
     expect(
       html,
       contains(
