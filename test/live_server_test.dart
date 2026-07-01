@@ -7,11 +7,11 @@ import 'package:test/test.dart';
 
 void main() {
   test('serves index and preview assets from memory', () async {
-    const previewPath = 'files/live-only-preview.html';
+    const previewPath = 'files/live-only-preview.js';
     final output = HtmlReportOutput(
-      indexHtml: '<iframe src="$previewPath"></iframe>',
+      indexHtml: '<script src="$previewPath"></script>',
       assets: const {
-        previewPath: '<html><body>from memory</body></html>',
+        previewPath: 'window.loadedPreview = true;',
         'assets/source_preview.css': 'body { color: #17202a; }',
       },
     );
@@ -29,7 +29,8 @@ void main() {
       expect(index.statusCode, HttpStatus.ok);
       expect(index.body, contains(previewPath));
       expect(preview.statusCode, HttpStatus.ok);
-      expect(preview.body, contains('from memory'));
+      expect(preview.contentType, startsWith('text/javascript'));
+      expect(preview.body, contains('loadedPreview'));
       expect(css.statusCode, HttpStatus.ok);
       expect(css.contentType, startsWith('text/css'));
       expect(missing.statusCode, HttpStatus.notFound);

@@ -1,3 +1,14 @@
+## 1.3.0
+
+- Replace iframe and fetch based source previews with local script-loaded
+  preview assets so large static reports opened from `file://` can load deeply
+  nested file previews reliably.
+- Keep only the currently opened source preview mounted in the DOM and remove
+  temporary preview scripts after loading to reduce memory usage in large
+  reports.
+- Serve preview JavaScript assets with the correct content type in
+  `coverage_lens serve`.
+
 ## 1.2.2
 
 - Fix source preview loading for large reports by generating unique, bounded

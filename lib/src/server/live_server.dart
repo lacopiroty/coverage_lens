@@ -54,6 +54,9 @@ class CoverageLensLiveServer {
     if (path.endsWith('.html')) {
       return ContentType.html;
     }
+    if (path.endsWith('.js')) {
+      return ContentType('text', 'javascript', charset: 'utf-8');
+    }
     return ContentType.text;
   }
 }

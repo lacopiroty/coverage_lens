@@ -106,23 +106,24 @@ void main() {
     expect(html, contains('lib/a.dart'));
     expect(html, contains('data-open-target="file-lib-a-dart-'));
     expect(html, contains('data-preview-src="files/lib-a-dart-'));
-    expect(html, contains('class="source-preview-frame"'));
-    expect(html, isNot(contains('loading="lazy"')));
-    expect(html, contains('function markPreviewLoaded(preview)'));
+    expect(html, contains('class="source-preview-host"'));
+    expect(html, isNot(contains('<iframe')));
     expect(
       html,
-      contains(
-        'function syncPreviewLoadState(preview, frame, expectedSrc, detailsNode, token)',
-      ),
+      contains('<link rel="stylesheet" href="assets/source_preview.css">'),
     );
+    expect(html, contains('function markPreviewLoaded(preview)'));
     expect(html, contains('function unloadPreview(detailsNode)'));
-    expect(html, contains("frame.src = 'about:blank';"));
-    expect(html, contains("frame.removeAttribute('data-preview-active-src');"));
-    expect(html, contains('function schedulePreviewSync('));
+    expect(html, contains('async function loadPreview(detailsNode)'));
+    expect(html, contains('function loadPreviewDocument(previewSrc)'));
+    expect(html, contains('document.createElement(\'script\')'));
+    expect(html, contains('script.src = previewSrc'));
+    expect(html, contains('__coverageLensPreviewStore'));
+    expect(html, contains('host.replaceChildren'));
     expect(
       html,
       contains(
-        '.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block;',
+        '.source-preview-host { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: none; max-height: 560px; min-height: 140px; overflow: auto; width: 100%; }',
       ),
     );
     expect(html, isNot(contains('Coverage details')));
@@ -130,16 +131,16 @@ void main() {
     expect(html, isNot(contains('class="file-detail"')));
     expect(html, isNot(contains('if (a &lt; b) return a;')));
     expect(preview, contains('if (a &lt; b) return a;'));
-    expect(preview, contains('class="line uncovered"'));
-    expect(preview, contains('class="source-lines"'));
-    expect(preview, contains('<p class="file-meta">score 28</p>'));
-    expect(preview, contains('../assets/source_preview.css'));
+    expect(preview, contains('line uncovered'));
+    expect(preview, contains('source-lines'));
+    expect(preview, contains('score 28'));
+    expect(preview, contains('window.__coverageLensPreviewStore'));
     expect(html, isNot(contains('Missing ranges')));
     expect(html, isNot(contains('Hits are LCOV execution counts')));
     expect(html, isNot(contains('LCOV did not mark the line executable')));
-    expect(preview, contains('<details class="line-detail">'));
-    expect(preview, contains('<span>Status: covered</span>'));
-    expect(preview, contains('<span>Hits: 1</span>'));
+    expect(preview, contains('line-detail'));
+    expect(preview, contains('Status: covered'));
+    expect(preview, contains('Hits: 1'));
     expect(html, isNot(contains('<span>Tests:')));
     expect(html, contains('.tree-file-preview { margin: 0 18px 14px; }'));
     expect(
@@ -151,7 +152,7 @@ void main() {
     expect(html, isNot(contains('table class="source"')));
   });
 
-  test('renders resilient preview loader for nested file tree previews', () {
+  test('renders script based preview loader for nested file tree previews', () {
     const file = CoverageFile(
       path:
           'modules/data/lib/src/features/deep/tree/preview_loader_target.dart',
@@ -189,13 +190,88 @@ void main() {
 
     final html = HtmlReportRenderer().render(report);
 
-    expect(html, contains('function frameMatchesPreviewSource('));
-    expect(html, contains('new URL(expectedSrc, window.location.href).href'));
-    expect(html, contains('frame.contentWindow.location.href'));
-    expect(html, contains('function schedulePreviewSync('));
+    expect(html, contains('function loadPreviewDocument(previewSrc)'));
+    expect(html, contains('window.__coverageLensPreviewCallbacks'));
+    expect(html, contains('script.addEventListener(\'load\', finish'));
+    expect(html, contains('script.addEventListener(\'error\', fail'));
+    expect(html, contains("template.content.querySelector('.source-preview')"));
+    expect(html, contains('document.importNode(source, true)'));
     expect(html, contains('function syncTreeFilePreview(detailsNode)'));
     expect(html, contains('requestAnimationFrame'));
-    expect(html, isNot(contains('markPreviewLoaded(preview);\n  }')));
+  });
+
+  test('reveals deep-linked file previews after ancestors are open', () {
+    const file = CoverageFile(
+      path: 'modules/data/lib/src/features/deep/tree/target.dart',
+      summary: CoverageSummary(
+        executableLines: 1,
+        coveredLines: 1,
+        uncoveredLines: 0,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 0,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      lines: [
+        CoverageLine(
+          number: 1,
+          hitCount: 1,
+          status: CoverageLineStatus.covered,
+          text: 'void target() {}',
+        ),
+      ],
+      uncoveredRanges: [],
+      hasMissingSource: false,
+      score: 0,
+      isBelowThreshold: false,
+    );
+    final report = CoverageReport(
+      generatedAt: DateTime.utc(2026, 6, 26, 12),
+      summary: file.summary,
+      groups: const [],
+      hotspots: const [],
+      warnings: const [],
+      files: const [file],
+    );
+
+    final html = HtmlReportRenderer().render(report);
+    final revealScript = html.substring(
+      html.indexOf('function revealTarget(id)'),
+      html.indexOf("document.querySelectorAll('[data-open-target]')"),
+    );
+
+    expect(revealScript, contains('syncTreeFilePreview(node);'));
+    expect(revealScript, isNot(contains('syncTreeFilePreview(parent);')));
+  });
+
+  test('marks invalid preview payloads as errors', () {
+    final html = HtmlReportRenderer().render(
+      CoverageReport(
+        generatedAt: DateTime.utc(2026, 6, 26, 12),
+        summary: const CoverageSummary(
+          executableLines: 0,
+          coveredLines: 0,
+          uncoveredLines: 0,
+          missingSourceFiles: 0,
+          filesBelowThreshold: 0,
+          branchFound: 0,
+          branchHit: 0,
+        ),
+        files: const [],
+        groups: const [],
+        hotspots: const [],
+        warnings: const [],
+      ),
+    );
+
+    expect(
+      html,
+      contains(
+          "if (!source) throw new Error('Preview payload missing source preview.');"),
+    );
+    expect(html, contains('markPreviewError(preview);'));
+    expect(html, isNot(contains('fetch(previewSrc)')));
+    expect(html, isNot(contains('contentWindow')));
   });
 
   test('renders unique bounded preview assets for colliding source paths', () {
@@ -358,7 +434,7 @@ void main() {
     );
   });
 
-  test('resizes source preview frame to compact content height', () {
+  test('renders compact source preview host', () {
     const file = CoverageFile(
       path: 'lib/small.dart',
       summary: CoverageSummary(
@@ -395,24 +471,16 @@ void main() {
 
     final html = HtmlReportRenderer().render(report);
 
-    expect(html, contains('function resizePreviewFrame(preview, frame)'));
-    expect(html, contains("doc.querySelector('.source-preview')"));
-    expect(html, contains('const minHeight = 140;'));
-    expect(html, contains('const maxHeight = 560;'));
-    expect(html, contains('source.getBoundingClientRect().height'));
-    expect(html, contains("frame.style.height = height + 'px';"));
-    expect(
-      html,
-      contains("preview.setAttribute('data-preview-height', String(height));"),
-    );
-    expect(html, contains('function resetPreviewFrameHeight(preview, frame)'));
-    expect(html, contains("frame.style.height = '';"));
-    expect(html, contains('resizePreviewFrame(preview, frame);'));
-    expect(html, contains('bindPreviewAutoResize(preview, frame);'));
     expect(
       html,
       contains(
-        '.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block; height: 560px; min-height: 140px;',
+        '.source-preview-host { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: none; max-height: 560px; min-height: 140px; overflow: auto; width: 100%; }',
+      ),
+    );
+    expect(
+      html,
+      contains(
+        '.tree-file-preview[data-preview-loaded="true"] .source-preview-host { display: block; }',
       ),
     );
   });
@@ -942,13 +1010,15 @@ void main() {
 
       expect(
         preview,
-        contains('<summary class="line nonExecutable inferredUncovered">'),
+        contains('line nonExecutable inferredUncovered'),
       );
-      expect(preview, contains('<span class="line-number">11</span>'));
-      expect(preview, contains('<span class="line-hits">-</span>'));
-      expect(preview, contains('<span>Status: not executable</span>'));
-      expect(preview, contains('<span>Hits: none</span>'));
-      expect(preview, contains('<span>Block: uncovered</span>'));
+      expect(preview, contains('line-number'));
+      expect(preview, contains('>11<'));
+      expect(preview, contains('line-hits'));
+      expect(preview, contains('>-<'));
+      expect(preview, contains('Status: not executable'));
+      expect(preview, contains('Hits: none'));
+      expect(preview, contains('Block: uncovered'));
       expect(html, isNot(contains('<span>Tests: not applicable</span>')));
     },
   );
@@ -1002,10 +1072,11 @@ void main() {
     final preview = _previewAsset(output, 'files/lib-a-dart-');
     final previewCss = output.assets['assets/source_preview.css']!;
 
-    expect(preview, contains('<summary class="line covered branchMissing">'));
-    expect(preview, contains('<span class="line-branch">B 1/2</span>'));
-    expect(preview, contains('<span>Branches: 1 / 2</span>'));
-    expect(preview, contains('<span>Missing branches: 1</span>'));
+    expect(preview, contains('line covered branchMissing'));
+    expect(preview, contains('line-branch'));
+    expect(preview, contains('B 1/2'));
+    expect(preview, contains('Branches: 1 / 2'));
+    expect(preview, contains('Missing branches: 1'));
     expect(
       previewCss,
       contains(
@@ -1018,8 +1089,7 @@ void main() {
 String _previewAsset(HtmlReportOutput output, String keyPrefix) {
   return output.assets.entries
       .singleWhere(
-        (entry) =>
-            entry.key.startsWith(keyPrefix) && entry.key.endsWith('.html'),
+        (entry) => entry.key.startsWith(keyPrefix) && entry.key.endsWith('.js'),
       )
       .value;
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../model/coverage_models.dart';
 
 /// HTML report document and companion asset files.
@@ -24,7 +26,7 @@ class HtmlReportRenderer {
       assets: {
         'assets/source_preview.css': _sourcePreviewCss(),
         for (final file in report.files)
-          _previewPath(file): _filePreviewDocument(file),
+          _previewPath(file): _filePreviewScript(file),
       },
     );
   }
@@ -39,6 +41,7 @@ class HtmlReportRenderer {
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
       )
       ..writeln('<title>Coverage Lens</title>')
+      ..writeln('<link rel="stylesheet" href="assets/source_preview.css">')
       ..writeln('<style>${_css()}</style>')
       ..writeln('</head>')
       ..writeln('<body>')
@@ -346,25 +349,21 @@ class HtmlReportRenderer {
     return '''
 <div class="tree-file-preview" style="--depth: $depth" data-preview-src="${_escape(previewPath)}" data-preview-loaded="false">
   <p class="preview-state">Loading source preview...</p>
-  <iframe class="source-preview-frame" title="Source preview for ${_escape(file.path)}"></iframe>
+  <div class="source-preview-host" role="region" aria-label="Source preview for ${_escape(file.path)}"></div>
 </div>
 ''';
   }
 
-  String _filePreviewDocument(CoverageFile file) {
+  String _filePreviewScript(CoverageFile file) {
+    final previewPath = _previewPath(file);
+    final encodedPath = jsonEncode(previewPath);
+    final encodedPreview = jsonEncode(_sourcePreview(file));
     return '''
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${_escape(file.path)}</title>
-<link rel="stylesheet" href="../assets/source_preview.css">
-</head>
-<body>
-${_sourcePreview(file)}
-</body>
-</html>
+window.__coverageLensPreviewStore = window.__coverageLensPreviewStore || Object.create(null);
+window.__coverageLensPreviewStore[$encodedPath] = $encodedPreview;
+if (window.__coverageLensPreviewCallbacks && window.__coverageLensPreviewCallbacks[$encodedPath]) {
+  window.__coverageLensPreviewCallbacks[$encodedPath]();
+}
 ''';
   }
 
@@ -498,8 +497,8 @@ details[open] > summary .chevron { transform: rotate(90deg); }
 .preview-state { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; color: var(--muted); font-size: 12px; margin: 0; padding: 12px; }
 .tree-file-preview[data-preview-loaded="true"] .preview-state { display: none; }
 .tree-file-preview[data-preview-error="true"] .preview-state { color: var(--red); display: block; }
-.source-preview-frame { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: block; height: 560px; min-height: 140px; width: 100%; }
-.tree-file-preview[data-preview-loaded="true"] .source-preview-frame { display: block; }
+.source-preview-host { background: #fbfcfe; border: 1px solid var(--soft-border); border-radius: 6px; display: none; max-height: 560px; min-height: 140px; overflow: auto; width: 100%; }
+.tree-file-preview[data-preview-loaded="true"] .source-preview-host { display: block; }
 @media (max-width: 900px) { .topbar { align-items: flex-start; flex-direction: column; } .summary-section { padding-left: 16px; padding-right: 16px; } .summary-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); overflow-x: visible; } .panel, .quality { margin-left: 16px; margin-right: 16px; } .insights-grid { grid-template-columns: 1fr 1fr; } .tree-toolbar { align-items: flex-start; grid-template-columns: 1fr; flex-direction: column; } .tree-actions { justify-content: flex-start; } .attention-file, .tree-row { align-items: flex-start; grid-template-columns: 1fr; } .tree-row { padding-left: calc(14px + (var(--depth) * 16px)); } .attention-meta, .tree-meta { justify-content: flex-start; white-space: normal; } }
 ''';
   }
@@ -566,100 +565,84 @@ function nextPreviewToken(preview) {
   return next;
 }
 
-function isPreviewRequestCurrent(preview, frame, expectedSrc, token, detailsNode) {
-  if (!preview || !frame || preview.getAttribute('data-preview-token') !== token) return false;
+function isPreviewRequestCurrent(preview, token, detailsNode) {
+  if (!preview || preview.getAttribute('data-preview-token') !== token) return false;
   if (detailsNode && !detailsNode.open) return false;
-  return frame.getAttribute('data-preview-active-src') === expectedSrc &&
-    frame.getAttribute('src') === expectedSrc;
-}
-
-function frameMatchesPreviewSource(frame, expectedSrc) {
-  if (!frame || frame.getAttribute('src') !== expectedSrc) return false;
-  try {
-    const expectedUrl = new URL(expectedSrc, window.location.href).href;
-    if (frame.contentWindow.location.href !== expectedUrl) return false;
-    const doc = frame.contentDocument;
-    if (!doc || doc.readyState === 'loading' || !doc.body) return false;
-    return Boolean(doc.querySelector('.source-preview'));
-  } catch (_) {
-    // Cross-origin access should not happen for generated local files, but keep
-    // iframe loading resilient if a report is hosted from an unusual location.
-    return frame.getAttribute('src') === expectedSrc;
-  }
-}
-
-function resizePreviewFrame(preview, frame) {
-  if (!preview || !frame) return;
-  try {
-    const doc = frame.contentDocument;
-    const source = doc ? doc.querySelector('.source-preview') : null;
-    if (!source) return;
-    const minHeight = 140;
-    const maxHeight = 560;
-    const measuredHeight = Math.ceil(source.getBoundingClientRect().height);
-    const contentHeight = Math.max(measuredHeight, source.scrollHeight);
-    const height = Math.max(minHeight, Math.min(maxHeight, contentHeight));
-    frame.style.height = height + 'px';
-    preview.setAttribute('data-preview-height', String(height));
-  } catch (_) {
-    // Keep the default fixed frame height if browser restrictions block access.
-  }
-}
-
-function resetPreviewFrameHeight(preview, frame) {
-  if (frame) frame.style.height = '';
-  if (preview) preview.removeAttribute('data-preview-height');
-}
-
-function bindPreviewAutoResize(preview, frame) {
-  if (!preview || !frame) return;
-  try {
-    const doc = frame.contentDocument;
-    if (!doc || !doc.body || doc.body.getAttribute('data-preview-resize-bound') === 'true') return;
-    doc.body.setAttribute('data-preview-resize-bound', 'true');
-    doc.addEventListener('toggle', () => {
-      window.requestAnimationFrame(() => resizePreviewFrame(preview, frame));
-    }, true);
-  } catch (_) {
-    // Preview stays usable with the default height if resize observation fails.
-  }
-}
-
-function syncPreviewLoadState(preview, frame, expectedSrc, detailsNode, token) {
-  if (!isPreviewRequestCurrent(preview, frame, expectedSrc, token, detailsNode)) return false;
-  if (preview.getAttribute('data-preview-loaded') === 'true') return true;
-  if (!frameMatchesPreviewSource(frame, expectedSrc)) return false;
-  resizePreviewFrame(preview, frame);
-  bindPreviewAutoResize(preview, frame);
-  markPreviewLoaded(preview);
   return true;
 }
 
-function schedulePreviewSync(preview, frame, expectedSrc, detailsNode, token, attempt) {
-  if (syncPreviewLoadState(preview, frame, expectedSrc, detailsNode, token)) return;
-  if (!isPreviewRequestCurrent(preview, frame, expectedSrc, token, detailsNode)) return;
-  if (attempt >= 30) {
-    markPreviewError(preview);
-    return;
-  }
-  const delay = attempt < 4 ? 100 : 350;
-  window.setTimeout(
-    () => schedulePreviewSync(preview, frame, expectedSrc, detailsNode, token, attempt + 1),
-    delay,
-  );
+window.__coverageLensPreviewStore = window.__coverageLensPreviewStore || Object.create(null);
+window.__coverageLensPreviewCallbacks = window.__coverageLensPreviewCallbacks || Object.create(null);
+
+function sourcePreviewFromHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const source = template.content.querySelector('.source-preview');
+  if (!source) throw new Error('Preview payload missing source preview.');
+  return document.importNode(source, true);
+}
+
+function takePreviewPayload(previewSrc) {
+  const html = window.__coverageLensPreviewStore[previewSrc];
+  if (typeof html !== 'string') return null;
+  delete window.__coverageLensPreviewStore[previewSrc];
+  return sourcePreviewFromHtml(html);
+}
+
+function loadPreviewDocument(previewSrc) {
+  return new Promise((resolve, reject) => {
+    const cachedSource = takePreviewPayload(previewSrc);
+    if (cachedSource) {
+      resolve(cachedSource);
+      return;
+    }
+
+    const script = document.createElement('script');
+    let done = false;
+
+    const cleanup = () => {
+      delete window.__coverageLensPreviewCallbacks[previewSrc];
+      script.remove();
+    };
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      try {
+        const source = takePreviewPayload(previewSrc);
+        if (!source) throw new Error('Preview payload missing source preview.');
+        cleanup();
+        resolve(source);
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    };
+
+    const fail = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(new Error('Preview request failed.'));
+    };
+
+    window.__coverageLensPreviewCallbacks[previewSrc] = finish;
+    script.async = true;
+    script.src = previewSrc;
+    script.addEventListener('load', finish, { once: true });
+    script.addEventListener('error', fail, { once: true });
+    document.head.appendChild(script);
+  });
 }
 
 function unloadPreview(detailsNode) {
   if (!detailsNode || !detailsNode.matches || !detailsNode.matches('.tree-file-detail')) return;
   const preview = detailsNode.querySelector('[data-preview-src]');
   if (!preview) return;
-  const frame = preview.querySelector('iframe');
-  if (!frame) return;
+  const host = preview.querySelector('.source-preview-host');
 
   nextPreviewToken(preview);
-  frame.removeAttribute('data-preview-active-src');
-  frame.src = 'about:blank';
-  resetPreviewFrameHeight(preview, frame);
+  if (host) host.replaceChildren();
   resetPreviewState(preview);
 }
 
@@ -693,47 +676,36 @@ function unloadPreviewsWithin(node) {
   node.querySelectorAll('.tree-file-detail').forEach(unloadPreview);
 }
 
-function loadPreview(detailsNode) {
+async function loadPreview(detailsNode) {
   if (!detailsNode || !detailsNode.matches || !detailsNode.matches('.tree-file-detail')) return;
   const preview = detailsNode.querySelector('[data-preview-src]');
   if (!preview) return;
-  const frame = preview.querySelector('iframe');
-  if (!frame) return;
+  const host = preview.querySelector('.source-preview-host');
+  if (!host) return;
   const previewSrc = preview.getAttribute('data-preview-src');
   if (!previewSrc) return;
   closeOtherFilePreviews(detailsNode);
-  if (preview.getAttribute('data-preview-loaded') === 'true' && frameMatchesPreviewSource(frame, previewSrc)) {
-    resizePreviewFrame(preview, frame);
+  if (preview.getAttribute('data-preview-loaded') === 'true' && host.children.length > 0) {
     return;
   }
 
   if (preview.getAttribute('data-preview-loading') === 'true') {
-    const activeToken = preview.getAttribute('data-preview-token') || '';
-    schedulePreviewSync(preview, frame, previewSrc, detailsNode, activeToken, 0);
     return;
   }
   resetPreviewState(preview);
-  resetPreviewFrameHeight(preview, frame);
+  host.replaceChildren();
   const token = nextPreviewToken(preview);
   preview.setAttribute('data-preview-loading', 'true');
-  frame.setAttribute('data-preview-active-src', previewSrc);
 
-  frame.addEventListener('load', () => {
-    syncPreviewLoadState(preview, frame, previewSrc, detailsNode, token);
-  }, { once: true });
-
-  frame.addEventListener('error', () => {
-    if (!isPreviewRequestCurrent(preview, frame, previewSrc, token, detailsNode)) return;
+  try {
+    const source = await loadPreviewDocument(previewSrc);
+    if (!isPreviewRequestCurrent(preview, token, detailsNode)) return;
+    host.replaceChildren(source);
+    markPreviewLoaded(preview);
+  } catch (_) {
+    if (!isPreviewRequestCurrent(preview, token, detailsNode)) return;
     markPreviewError(preview);
-  }, { once: true });
-
-  if (frame.getAttribute('src') !== previewSrc) {
-    frame.src = previewSrc;
-  } else {
-    syncPreviewLoadState(preview, frame, previewSrc, detailsNode, token);
   }
-
-  schedulePreviewSync(preview, frame, previewSrc, detailsNode, token, 0);
 }
 
 function revealTarget(id) {
@@ -745,10 +717,10 @@ function revealTarget(id) {
     if (parent.tagName && parent.tagName.toLowerCase() === 'details') {
       parent.open = true;
       parent.style.display = '';
-      syncTreeFilePreview(parent);
     }
     parent = parent.parentElement;
   }
+  syncTreeFilePreview(node);
   node.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -1162,8 +1134,7 @@ document.querySelectorAll('[data-summary-target]').forEach((button) => {
 
   String _fileId(CoverageFile file) => 'file-${_stableId(file.path)}';
 
-  String _previewPath(CoverageFile file) =>
-      'files/${_stableId(file.path)}.html';
+  String _previewPath(CoverageFile file) => 'files/${_stableId(file.path)}.js';
 
   String _stableId(String value) {
     final normalized = _normalizePath(value);

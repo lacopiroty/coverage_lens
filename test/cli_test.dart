@@ -69,12 +69,16 @@ void main() {
     expect(previewFile.existsSync(), isTrue);
 
     final indexHtml = indexFile.readAsStringSync();
-    final previewHtml = previewFile.readAsStringSync();
+    final previewScript = previewFile.readAsStringSync();
 
     expect(indexHtml, contains('data-preview-src="files/lib-calculator-dart-'));
+    expect(
+      indexHtml,
+      contains('<link rel="stylesheet" href="assets/source_preview.css">'),
+    );
     expect(indexHtml, isNot(contains('return a + b;')));
-    expect(previewHtml, contains('return a + b;'));
-    expect(previewHtml, contains('../assets/source_preview.css'));
+    expect(previewScript, contains('return a + b;'));
+    expect(previewScript, contains('window.__coverageLensPreviewStore'));
   });
 
   test('writes a one-page summary pdf without source file details', () async {
@@ -263,6 +267,6 @@ File _previewFile(Directory outDir, String basenamePrefix) {
       .whereType<File>()
       .singleWhere((file) {
     final name = file.uri.pathSegments.last;
-    return name.startsWith(basenamePrefix) && name.endsWith('.html');
+    return name.startsWith(basenamePrefix) && name.endsWith('.js');
   });
 }
