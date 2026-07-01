@@ -1,3 +1,10 @@
+## 1.2.2
+
+- Fix source preview loading for large reports by generating unique, bounded
+  preview asset names with stable path hashes.
+- Keep preview loading state active until the iframe contains a valid Coverage
+  Lens source preview document.
+
 ## 1.2.1
 
 - Add documentation comments for the public API exported by `coverage_lens`.

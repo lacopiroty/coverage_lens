@@ -68,7 +68,7 @@ void main() {
 
     final output = HtmlReportRenderer().renderReport(report);
     final html = output.indexHtml;
-    final preview = output.assets['files/lib-a-dart.html']!;
+    final preview = _previewAsset(output, 'files/lib-a-dart-');
     final previewCss = output.assets['assets/source_preview.css']!;
 
     expect(html, contains('Coverage Lens'));
@@ -83,9 +83,10 @@ void main() {
     expect(
       html,
       contains(
-        '<a class="attention-file" href="#file-lib-a-dart" data-open-target="file-lib-a-dart" data-path="lib/a.dart">',
+        '<a class="attention-file" href="#file-lib-a-dart-',
       ),
     );
+    expect(html, contains('data-path="lib/a.dart"'));
     expect(html, isNot(contains('<table id="hotspots">')));
     expect(html, isNot(contains('<th>Ranges</th>')));
     expect(html, contains('Coverage tree'));
@@ -95,12 +96,16 @@ void main() {
     expect(
       html,
       contains(
-        '<details class="tree-file-detail" id="file-lib-a-dart" data-tree-path="lib/a.dart" data-path="lib/a.dart">',
+        '<details class="tree-file-detail" id="file-lib-a-dart-',
       ),
     );
+    expect(
+      html,
+      contains('data-tree-path="lib/a.dart" data-path="lib/a.dart"'),
+    );
     expect(html, contains('lib/a.dart'));
-    expect(html, contains('data-open-target="file-lib-a-dart"'));
-    expect(html, contains('data-preview-src="files/lib-a-dart.html"'));
+    expect(html, contains('data-open-target="file-lib-a-dart-'));
+    expect(html, contains('data-preview-src="files/lib-a-dart-'));
     expect(html, contains('class="source-preview-frame"'));
     expect(html, isNot(contains('loading="lazy"')));
     expect(html, contains('function markPreviewLoaded(preview)'));
@@ -191,6 +196,74 @@ void main() {
     expect(html, contains('function syncTreeFilePreview(detailsNode)'));
     expect(html, contains('requestAnimationFrame'));
     expect(html, isNot(contains('markPreviewLoaded(preview);\n  }')));
+  });
+
+  test('renders unique bounded preview assets for colliding source paths', () {
+    CoverageFile file(String path) {
+      return CoverageFile(
+        path: path,
+        summary: const CoverageSummary(
+          executableLines: 1,
+          coveredLines: 1,
+          uncoveredLines: 0,
+          missingSourceFiles: 0,
+          filesBelowThreshold: 0,
+          branchFound: 0,
+          branchHit: 0,
+        ),
+        lines: const [
+          CoverageLine(
+            number: 1,
+            hitCount: 1,
+            status: CoverageLineStatus.covered,
+            text: 'void covered() {}',
+          ),
+        ],
+        uncoveredRanges: const [],
+        hasMissingSource: false,
+        score: 0,
+        isBelowThreshold: false,
+      );
+    }
+
+    final longPath =
+        'modules/feature/lib/src/${List.filled(20, 'very_long_directory_name').join('/')}/target.dart';
+    final files = [
+      file('lib/a.b.dart'),
+      file('lib/a/b.dart'),
+      file(longPath),
+    ];
+    final report = CoverageReport(
+      generatedAt: DateTime.utc(2026, 6, 26, 12),
+      summary: const CoverageSummary(
+        executableLines: 3,
+        coveredLines: 3,
+        uncoveredLines: 0,
+        missingSourceFiles: 0,
+        filesBelowThreshold: 0,
+        branchFound: 0,
+        branchHit: 0,
+      ),
+      groups: const [],
+      hotspots: files,
+      warnings: const [],
+      files: files,
+    );
+
+    final output = HtmlReportRenderer().renderReport(report);
+    final previewAssets =
+        output.assets.keys.where((path) => path.startsWith('files/')).toList();
+    final fileIds = RegExp(
+      r'<details class="tree-file-detail" id="([^"]+)"',
+    ).allMatches(output.indexHtml).map((match) => match.group(1)!).toList();
+
+    expect(previewAssets, hasLength(files.length));
+    expect(previewAssets.toSet(), hasLength(files.length));
+    expect(fileIds.toSet(), hasLength(files.length));
+    expect(
+      previewAssets,
+      everyElement(allOf(startsWith('files/'), hasLength(lessThan(140)))),
+    );
   });
 
   test('keeps only one file preview open at a time', () {
@@ -541,9 +614,10 @@ void main() {
     expect(
       html,
       contains(
-        '<a class="summary-list-item" href="#file-lib-zero-dart" data-open-target="file-lib-zero-dart" data-path="lib/zero.dart">',
+        '<a class="summary-list-item" href="#file-lib-zero-dart-',
       ),
     );
+    expect(html, contains('data-path="lib/zero.dart"'));
     expect(
       html,
       contains(
@@ -577,9 +651,10 @@ void main() {
     expect(
       html,
       contains(
-        '<a class="summary-list-item" href="#file-lib-partial-dart" data-open-target="file-lib-partial-dart" data-path="lib/partial.dart">',
+        '<a class="summary-list-item" href="#file-lib-partial-dart-',
       ),
     );
+    expect(html, contains('data-path="lib/partial.dart"'));
     expect(
       html,
       contains(
@@ -723,7 +798,13 @@ void main() {
     expect(
       html,
       contains(
-        '<details class="tree-file-detail" id="file-lib-features-a-dart" data-tree-path="lib/features/a.dart" data-path="lib/features/a.dart">',
+        '<details class="tree-file-detail" id="file-lib-features-a-dart-',
+      ),
+    );
+    expect(
+      html,
+      contains(
+        'data-tree-path="lib/features/a.dart" data-path="lib/features/a.dart"',
       ),
     );
     expect(
@@ -857,7 +938,7 @@ void main() {
 
       final output = HtmlReportRenderer().renderReport(report);
       final html = output.indexHtml;
-      final preview = output.assets['files/lib-a-dart.html']!;
+      final preview = _previewAsset(output, 'files/lib-a-dart-');
 
       expect(
         preview,
@@ -918,7 +999,7 @@ void main() {
     );
 
     final output = HtmlReportRenderer().renderReport(report);
-    final preview = output.assets['files/lib-a-dart.html']!;
+    final preview = _previewAsset(output, 'files/lib-a-dart-');
     final previewCss = output.assets['assets/source_preview.css']!;
 
     expect(preview, contains('<summary class="line covered branchMissing">'));
@@ -932,4 +1013,13 @@ void main() {
       ),
     );
   });
+}
+
+String _previewAsset(HtmlReportOutput output, String keyPrefix) {
+  return output.assets.entries
+      .singleWhere(
+        (entry) =>
+            entry.key.startsWith(keyPrefix) && entry.key.endsWith('.html'),
+      )
+      .value;
 }

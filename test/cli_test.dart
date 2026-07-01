@@ -62,7 +62,7 @@ void main() {
     ]);
 
     final indexFile = File('${outDir.path}/index.html');
-    final previewFile = File('${outDir.path}/files/lib-calculator-dart.html');
+    final previewFile = _previewFile(outDir, 'lib-calculator-dart-');
 
     expect(exitCode, 0);
     expect(indexFile.existsSync(), isTrue);
@@ -71,8 +71,7 @@ void main() {
     final indexHtml = indexFile.readAsStringSync();
     final previewHtml = previewFile.readAsStringSync();
 
-    expect(indexHtml,
-        contains('data-preview-src="files/lib-calculator-dart.html"'));
+    expect(indexHtml, contains('data-preview-src="files/lib-calculator-dart-'));
     expect(indexHtml, isNot(contains('return a + b;')));
     expect(previewHtml, contains('return a + b;'));
     expect(previewHtml, contains('../assets/source_preview.css'));
@@ -204,7 +203,7 @@ end_of_record
     expect(indexHtml, contains('lib/root.dart'));
     expect(indexHtml, contains('modules/core/lib/core.dart'));
     expect(
-      File('${outDir.path}/files/modules-core-lib-core-dart.html').existsSync(),
+      _previewFile(outDir, 'modules-core-lib-core-dart-').existsSync(),
       isTrue,
     );
   });
@@ -255,5 +254,15 @@ thresholds:
 
     expect(exitCode, 0);
     expect(indexHtml, contains('packages/nested/lib/nested.dart'));
+  });
+}
+
+File _previewFile(Directory outDir, String basenamePrefix) {
+  return Directory('${outDir.path}/files')
+      .listSync()
+      .whereType<File>()
+      .singleWhere((file) {
+    final name = file.uri.pathSegments.last;
+    return name.startsWith(basenamePrefix) && name.endsWith('.html');
   });
 }

@@ -147,7 +147,7 @@ class HtmlReportRenderer {
   }
 
   String _summaryFileItem(CoverageFile file, String meta) {
-    final fileId = 'file-${_id(file.path)}';
+    final fileId = _fileId(file);
     return '''
 <a class="summary-list-item" href="#$fileId" data-open-target="$fileId" data-path="${_escape(file.path)}">
   <span class="summary-list-path">${_escape(file.path)}</span>
@@ -303,7 +303,7 @@ class HtmlReportRenderer {
   }
 
   String _treeFile(CoverageFile file, {required int depth}) {
-    final fileId = 'file-${_id(file.path)}';
+    final fileId = _fileId(file);
     return '''
 <details class="tree-file-detail" id="$fileId" data-tree-path="${_escape(file.path)}" data-path="${_escape(file.path)}">
   <summary class="tree-row tree-file" style="--depth: $depth">
@@ -326,7 +326,7 @@ class HtmlReportRenderer {
     final items = report.hotspots.where((file) => file.score > 0).take(20).map((
       file,
     ) {
-      final fileId = 'file-${_id(file.path)}';
+      final fileId = _fileId(file);
       return '''
 <a class="attention-file" href="#$fileId" data-open-target="$fileId" data-path="${_escape(file.path)}">
   <span class="attention-path">${_escape(file.path)}</span>
@@ -579,7 +579,8 @@ function frameMatchesPreviewSource(frame, expectedSrc) {
     const expectedUrl = new URL(expectedSrc, window.location.href).href;
     if (frame.contentWindow.location.href !== expectedUrl) return false;
     const doc = frame.contentDocument;
-    return Boolean(doc && doc.readyState !== 'loading' && doc.body);
+    if (!doc || doc.readyState === 'loading' || !doc.body) return false;
+    return Boolean(doc.querySelector('.source-preview'));
   } catch (_) {
     // Cross-origin access should not happen for generated local files, but keep
     // iframe loading resilient if a report is hosted from an unusual location.
@@ -1159,7 +1160,30 @@ document.querySelectorAll('[data-summary-target]').forEach((button) => {
 
   String _twoDigits(int value) => value.toString().padLeft(2, '0');
 
-  String _previewPath(CoverageFile file) => 'files/${_id(file.path)}.html';
+  String _fileId(CoverageFile file) => 'file-${_stableId(file.path)}';
+
+  String _previewPath(CoverageFile file) =>
+      'files/${_stableId(file.path)}.html';
+
+  String _stableId(String value) {
+    final normalized = _normalizePath(value);
+    final rawSlug = _id(normalized);
+    final slug = rawSlug.isEmpty ? 'file' : rawSlug;
+    final hash = _stableHash(normalized);
+    final boundedSlug = slug.length <= 88
+        ? slug
+        : '${slug.substring(0, 56)}-${slug.substring(slug.length - 24)}';
+    return '$boundedSlug-$hash';
+  }
+
+  String _stableHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final codeUnit in value.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(36).padLeft(7, '0');
+  }
 
   String _id(String value) {
     return value.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '-');
