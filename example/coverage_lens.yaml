@@ -6,6 +6,9 @@ lcovPaths:
 outputDir: build/coverage_lens
 summaryIcon: assets/app_icon.png
 projectName: Example App
+sourcePreview: true
+# changedFrom: origin/main
+# changedTo: HEAD
 thresholds:
   line: 80
   branch: 70

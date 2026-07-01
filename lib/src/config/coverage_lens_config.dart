@@ -12,6 +12,9 @@ class CoverageLensConfig {
     this.outputDir = 'build/coverage_lens',
     this.summaryIcon,
     this.projectName,
+    this.sourcePreview = true,
+    this.changedFrom,
+    this.changedTo,
     this.lineThreshold = 80,
     this.branchThreshold = 70,
     this.includes = const [],
@@ -35,6 +38,15 @@ class CoverageLensConfig {
 
   /// Optional application or package name shown in generated summary PDFs.
   final String? projectName;
+
+  /// Whether generated HTML reports include expandable source previews.
+  final bool sourcePreview;
+
+  /// Optional Git revision used as the base for changed-file reports.
+  final String? changedFrom;
+
+  /// Optional Git revision used as the head for changed-file reports.
+  final String? changedTo;
 
   /// Minimum desired line coverage percentage.
   final double lineThreshold;
@@ -60,6 +72,9 @@ class CoverageLensConfig {
     String? outputDir,
     String? summaryIcon,
     String? projectName,
+    bool? sourcePreview,
+    String? changedFrom,
+    String? changedTo,
     double? lineThreshold,
     double? branchThreshold,
     List<String>? includes,
@@ -72,6 +87,9 @@ class CoverageLensConfig {
       outputDir: outputDir ?? this.outputDir,
       summaryIcon: summaryIcon ?? this.summaryIcon,
       projectName: projectName ?? this.projectName,
+      sourcePreview: sourcePreview ?? this.sourcePreview,
+      changedFrom: changedFrom ?? this.changedFrom,
+      changedTo: changedTo ?? this.changedTo,
       lineThreshold: lineThreshold ?? this.lineThreshold,
       branchThreshold: branchThreshold ?? this.branchThreshold,
       includes: includes ?? this.includes,
@@ -110,6 +128,9 @@ class CoverageLensConfig {
           _string(yaml['outputDir'], 'outputDir') ?? 'build/coverage_lens',
       summaryIcon: _string(yaml['summaryIcon'], 'summaryIcon'),
       projectName: _string(yaml['projectName'], 'projectName'),
+      sourcePreview: _bool(yaml['sourcePreview'], 'sourcePreview') ?? true,
+      changedFrom: _string(yaml['changedFrom'], 'changedFrom'),
+      changedTo: _string(yaml['changedTo'], 'changedTo'),
       lineThreshold: lineThreshold,
       branchThreshold: branchThreshold,
       includes: _stringList(yaml['include'], 'include'),
@@ -132,6 +153,16 @@ class CoverageLensConfig {
       return value.toDouble();
     }
     throw FormatException('$key must be a number.');
+  }
+
+  static bool? _bool(Object? value, String key) {
+    if (value == null) {
+      return null;
+    }
+    if (value is bool) {
+      return value;
+    }
+    throw FormatException('$key must be a boolean.');
   }
 
   static List<String> _stringList(Object? value, String key) {

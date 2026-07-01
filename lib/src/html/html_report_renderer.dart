@@ -14,24 +14,45 @@ class HtmlReportOutput {
   final Map<String, String> assets;
 }
 
+/// Options that control HTML report rendering.
+class HtmlReportRenderOptions {
+  /// Creates HTML render options.
+  const HtmlReportRenderOptions({this.includeSourcePreviews = true});
+
+  /// Whether file rows include expandable source previews.
+  final bool includeSourcePreviews;
+}
+
 /// Renders an analyzed coverage report as static HTML.
 class HtmlReportRenderer {
   /// Renders only the main HTML document.
-  String render(CoverageReport report) => renderReport(report).indexHtml;
+  String render(
+    CoverageReport report, {
+    HtmlReportRenderOptions options = const HtmlReportRenderOptions(),
+  }) =>
+      renderReport(report, options: options).indexHtml;
 
   /// Renders the main HTML document and lazily loaded source preview assets.
-  HtmlReportOutput renderReport(CoverageReport report) {
+  HtmlReportOutput renderReport(
+    CoverageReport report, {
+    HtmlReportRenderOptions options = const HtmlReportRenderOptions(),
+  }) {
     return HtmlReportOutput(
-      indexHtml: _renderIndex(report),
-      assets: {
-        'assets/source_preview.css': _sourcePreviewCss(),
-        for (final file in report.files)
-          _previewPath(file): _filePreviewScript(file),
-      },
+      indexHtml: _renderIndex(report, options: options),
+      assets: options.includeSourcePreviews
+          ? {
+              'assets/source_preview.css': _sourcePreviewCss(),
+              for (final file in report.files)
+                _previewPath(file): _filePreviewScript(file),
+            }
+          : const {},
     );
   }
 
-  String _renderIndex(CoverageReport report) {
+  String _renderIndex(
+    CoverageReport report, {
+    required HtmlReportRenderOptions options,
+  }) {
     final buffer = StringBuffer()
       ..writeln('<!doctype html>')
       ..writeln('<html lang="en">')
@@ -40,8 +61,12 @@ class HtmlReportRenderer {
       ..writeln(
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
       )
-      ..writeln('<title>Coverage Lens</title>')
-      ..writeln('<link rel="stylesheet" href="assets/source_preview.css">')
+      ..writeln('<title>Coverage Lens</title>');
+    if (options.includeSourcePreviews) {
+      buffer
+          .writeln('<link rel="stylesheet" href="assets/source_preview.css">');
+    }
+    buffer
       ..writeln('<style>${_css()}</style>')
       ..writeln('</head>')
       ..writeln('<body>')
@@ -58,7 +83,7 @@ class HtmlReportRenderer {
       ..writeln(_summary(report))
       ..writeln(_insights(report))
       ..writeln(_warnings(report))
-      ..writeln(_coverageTree(report))
+      ..writeln(_coverageTree(report, options: options))
       ..writeln(_hotspots(report))
       ..writeln(_script())
       ..writeln('</body>')
@@ -214,7 +239,10 @@ class HtmlReportRenderer {
 ''';
   }
 
-  String _coverageTree(CoverageReport report) {
+  String _coverageTree(
+    CoverageReport report, {
+    required HtmlReportRenderOptions options,
+  }) {
     if (report.files.isEmpty && report.excludedFiles.isEmpty) {
       return '';
     }
@@ -225,8 +253,9 @@ class HtmlReportRenderer {
     final excludedFiles = tree.excludedFiles.toList()
       ..sort((a, b) => a.path.compareTo(b.path));
     final items = [
-      ...folders.map((folder) => _treeFolder(folder, depth: 0)),
-      ...files.map((file) => _treeFile(file, depth: 0)),
+      ...folders
+          .map((folder) => _treeFolder(folder, depth: 0, options: options)),
+      ...files.map((file) => _treeFile(file, depth: 0, options: options)),
       ...excludedFiles.map((file) => _treeExcludedFile(file, depth: 0)),
     ].join();
     return '''
@@ -281,7 +310,11 @@ class HtmlReportRenderer {
     return current;
   }
 
-  String _treeFolder(_CoverageTreeDirectory directory, {required int depth}) {
+  String _treeFolder(
+    _CoverageTreeDirectory directory, {
+    required int depth,
+    required HtmlReportRenderOptions options,
+  }) {
     final summary = _summaryForTreeDirectory(directory);
     final childFolders = directory.directories.values.toList()
       ..sort((a, b) => a.name.compareTo(b.name));
@@ -291,8 +324,11 @@ class HtmlReportRenderer {
       ..sort((a, b) => a.path.compareTo(b.path));
     final excludedCount = _excludedFileCountForTreeDirectory(directory);
     final children = [
-      ...childFolders.map((folder) => _treeFolder(folder, depth: depth + 1)),
-      ...files.map((file) => _treeFile(file, depth: depth + 1)),
+      ...childFolders.map(
+        (folder) => _treeFolder(folder, depth: depth + 1, options: options),
+      ),
+      ...files
+          .map((file) => _treeFile(file, depth: depth + 1, options: options)),
       ...excludedFiles.map((file) => _treeExcludedFile(file, depth: depth + 1)),
     ].join();
     return '''
@@ -305,14 +341,26 @@ class HtmlReportRenderer {
 </details>''';
   }
 
-  String _treeFile(CoverageFile file, {required int depth}) {
+  String _treeFile(
+    CoverageFile file, {
+    required int depth,
+    required HtmlReportRenderOptions options,
+  }) {
     final fileId = _fileId(file);
-    return '''
-<details class="tree-file-detail" id="$fileId" data-tree-path="${_escape(file.path)}" data-path="${_escape(file.path)}">
+    final row = '''
   <summary class="tree-row tree-file" style="--depth: $depth">
     <span class="tree-name"><span class="tree-spacer"></span><span class="tree-icon file"></span><span class="tree-file-name">${_escape(_basename(file.path))}</span></span>
     <span class="tree-meta"><span class="tree-pill pill ${_tone(file.summary.lineCoveragePercent)}">${_percent(file.summary.lineCoveragePercent)}</span><span>${file.summary.uncoveredLines} uncovered</span></span>
-  </summary>
+  </summary>''';
+    if (!options.includeSourcePreviews) {
+      return '''
+<div class="tree-file-detail tree-file-static" id="$fileId" data-tree-path="${_escape(file.path)}" data-path="${_escape(file.path)}">
+${row.replaceFirst('<summary', '<div').replaceFirst('</summary>', '</div>')}
+</div>''';
+    }
+    return '''
+<details class="tree-file-detail" id="$fileId" data-tree-path="${_escape(file.path)}" data-path="${_escape(file.path)}">
+$row
   ${_filePreviewFrame(file, depth: depth)}
 </details>''';
   }

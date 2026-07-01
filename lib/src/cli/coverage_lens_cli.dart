@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -67,6 +68,9 @@ class CoverageLensCli {
       ..addOption('summary-pdf-out')
       ..addOption('summary-icon')
       ..addOption('project-name')
+      ..addFlag('source-preview', defaultsTo: true)
+      ..addOption('changed-from')
+      ..addOption('changed-to')
       ..addOption('fail-under-lines')
       ..addOption('fail-under-branches')
       ..addMultiOption('include')
@@ -81,6 +85,9 @@ class CoverageLensCli {
       ..addOption('source')
       ..addOption('host', defaultsTo: CoverageLensLiveServer.defaultHost)
       ..addOption('port', defaultsTo: '${CoverageLensLiveServer.defaultPort}')
+      ..addFlag('source-preview', defaultsTo: true)
+      ..addOption('changed-from')
+      ..addOption('changed-to')
       ..addOption('fail-under-lines')
       ..addOption('fail-under-branches')
       ..addMultiOption('include')
@@ -258,6 +265,15 @@ class CoverageLensCli {
       projectName: command.options.contains('project-name')
           ? command['project-name'] as String? ?? config.projectName
           : config.projectName,
+      sourcePreview: command.wasParsed('source-preview')
+          ? command['source-preview'] as bool
+          : config.sourcePreview,
+      changedFrom: command.wasParsed('changed-from')
+          ? command['changed-from'] as String?
+          : config.changedFrom,
+      changedTo: command.wasParsed('changed-to')
+          ? command['changed-to'] as String?
+          : config.changedTo,
       lineThreshold:
           _doubleOption(command['fail-under-lines']) ?? config.lineThreshold,
       branchThreshold: _doubleOption(command['fail-under-branches']) ??
@@ -275,6 +291,10 @@ class CoverageLensCli {
     if (!sourceRoot.existsSync()) {
       stderr.writeln('Source root not found: ${config.sourceRoot}');
       return const _PreparedCoverageReport(exitCode: 66);
+    }
+    if (_hasValue(config.changedTo) && !_hasValue(config.changedFrom)) {
+      stderr.writeln('changed-to requires changed-from.');
+      return const _PreparedCoverageReport(exitCode: 64);
     }
 
     final lcovFiles = _resolveLcovFiles(config.effectiveLcovPaths);
@@ -301,9 +321,20 @@ class CoverageLensCli {
       return const _PreparedCoverageReport(exitCode: 66);
     }
     final mergedRecords = LcovRecordMerger().merge(records);
+    final changedFilesResult = _resolveChangedFiles(config);
+    if (changedFilesResult.exitCode != null) {
+      return _PreparedCoverageReport(exitCode: changedFilesResult.exitCode);
+    }
+    final changedFiles = changedFilesResult.files;
+    final recordsForAnalysis = changedFiles == null
+        ? mergedRecords
+        : mergedRecords
+            .where(
+                (record) => changedFiles.contains(_toPosix(record.sourceFile)))
+            .toList();
 
-    final report = CoverageAnalyzer().analyze(
-      records: mergedRecords,
+    var report = CoverageAnalyzer().analyze(
+      records: recordsForAnalysis,
       sourceResolver: FileSystemSourceResolver(sourceRoot: config.sourceRoot),
       config: CoverageAnalysisConfig(
         lineWarningThreshold: config.lineThreshold,
@@ -312,8 +343,18 @@ class CoverageLensCli {
         excludes: config.excludes,
       ),
     );
+    if (changedFiles != null && recordsForAnalysis.isEmpty) {
+      report = _copyReportWithWarnings(report, [
+        'No LCOV records matched changed files from ${config.changedFrom} to ${_changedTo(config)}.',
+      ]);
+    }
 
-    final htmlReport = HtmlReportRenderer().renderReport(report);
+    final htmlReport = HtmlReportRenderer().renderReport(
+      report,
+      options: HtmlReportRenderOptions(
+        includeSourcePreviews: config.sourcePreview,
+      ),
+    );
     return _PreparedCoverageReport(
       config: config,
       report: report,
@@ -339,6 +380,36 @@ class CoverageLensCli {
     }
     return List.unmodifiable(filesByPath.values);
   }
+
+  _ChangedFilesResult _resolveChangedFiles(CoverageLensConfig config) {
+    if (!_hasValue(config.changedFrom)) {
+      return const _ChangedFilesResult();
+    }
+    final from = config.changedFrom!;
+    final to = _changedTo(config);
+    final result = Process.runSync(
+      'git',
+      ['diff', '--name-only', '--relative', '$from...$to'],
+      workingDirectory: config.sourceRoot,
+    );
+    if (result.exitCode != 0) {
+      stderr.writeln(
+        'Unable to resolve changed files from $from to $to: ${result.stderr}',
+      );
+      return const _ChangedFilesResult(exitCode: 66);
+    }
+    final files = const LineSplitter()
+        .convert(result.stdout.toString())
+        .map((line) => _toPosix(p.normalize(line.trim())))
+        .where((line) => line.isNotEmpty)
+        .toSet();
+    return _ChangedFilesResult(files: files);
+  }
+
+  String _changedTo(CoverageLensConfig config) =>
+      _hasValue(config.changedTo) ? config.changedTo! : 'HEAD';
+
+  bool _hasValue(String? value) => value != null && value.trim().isNotEmpty;
 
   List<File> _expandLcovPath(String path) {
     if (!_hasGlob(path)) {
@@ -490,6 +561,21 @@ class CoverageLensCli {
   }
 
   String _toPosix(String path) => path.replaceAll('\\', '/');
+
+  CoverageReport _copyReportWithWarnings(
+    CoverageReport report,
+    List<String> warnings,
+  ) {
+    return CoverageReport(
+      generatedAt: report.generatedAt,
+      summary: report.summary,
+      files: report.files,
+      groups: report.groups,
+      hotspots: report.hotspots,
+      warnings: List.unmodifiable([...report.warnings, ...warnings]),
+      excludedFiles: report.excludedFiles,
+    );
+  }
 
   void _clearManagedOutput(Directory outputDir) {
     for (final child in ['assets', 'files']) {
@@ -649,4 +735,11 @@ class _PreparedCoverageReport {
   final CoverageLensConfig? config;
   final CoverageReport? report;
   final HtmlReportOutput? htmlReport;
+}
+
+class _ChangedFilesResult {
+  const _ChangedFilesResult({this.files, this.exitCode});
+
+  final Set<String>? files;
+  final int? exitCode;
 }

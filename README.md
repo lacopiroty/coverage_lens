@@ -85,6 +85,41 @@ The report output is a folder. Keep `index.html`, `files/`, and `assets/`
 together when sharing or archiving the report. Source previews are stored in
 `files/` so the main `index.html` stays small even for large projects.
 
+For a lighter report without expandable source previews, add
+`--no-source-preview`:
+
+```bash
+dart run coverage_lens:coverage_lens report \
+  --lcov coverage/lcov.info \
+  --source . \
+  --out build/coverage_lens \
+  --no-source-preview
+```
+
+This keeps the summary cards, insights, warnings, attention list, and coverage
+tree, but does not generate the `files/` preview assets.
+
+To focus a report on files changed in a pull request, pass a Git base revision:
+
+```bash
+dart run coverage_lens:coverage_lens report \
+  --lcov coverage/lcov.info \
+  --source . \
+  --out build/coverage_lens_pr \
+  --changed-from origin/main
+```
+
+Coverage Lens runs `git diff --name-only <from>...<to>` inside `sourceRoot` and
+keeps only LCOV records whose source paths are in that changed-file set. The
+head revision defaults to `HEAD`; use `--changed-to` when CI needs an explicit
+head:
+
+```bash
+dart run coverage_lens:coverage_lens report \
+  --changed-from origin/main \
+  --changed-to HEAD
+```
+
 To also write a one-page PDF with aggregate statistics only, add
 `--summary-pdf`:
 
@@ -147,6 +182,9 @@ lcovPaths:
 outputDir: build/coverage_lens
 summaryIcon: assets/app_icon.png
 projectName: Example App
+sourcePreview: true
+# changedFrom: origin/main
+# changedTo: HEAD
 thresholds:
   line: 80
   branch: 70

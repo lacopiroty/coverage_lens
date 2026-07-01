@@ -1,3 +1,11 @@
+## 1.4.0
+
+- Add `--no-source-preview` and `sourcePreview: false` for lighter HTML
+  reports that keep summaries and the coverage tree without generating source
+  preview assets.
+- Add changed-file report scope through `--changed-from`, `--changed-to`,
+  `changedFrom`, and `changedTo` for PR-focused coverage reports.
+
 ## 1.3.0
 
 - Replace iframe and fetch based source previews with local script-loaded

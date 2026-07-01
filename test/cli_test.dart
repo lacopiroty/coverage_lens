@@ -81,6 +81,41 @@ void main() {
     expect(previewScript, contains('window.__coverageLensPreviewStore'));
   });
 
+  test('generates report without source preview assets when disabled',
+      () async {
+    final outDir = Directory('build/test_cli_no_source_preview');
+    if (outDir.existsSync()) {
+      outDir.deleteSync(recursive: true);
+    }
+
+    final exitCode = await CoverageLensCli().run([
+      'report',
+      '--lcov',
+      'test/fixtures/sample.lcov',
+      '--source',
+      'test/fixtures/project',
+      '--out',
+      outDir.path,
+      '--no-source-preview',
+      '--fail-under-lines',
+      '0',
+      '--fail-under-branches',
+      '0',
+    ]);
+
+    final indexHtml = File('${outDir.path}/index.html').readAsStringSync();
+
+    expect(exitCode, 0);
+    expect(indexHtml, contains('lib/calculator.dart'));
+    expect(indexHtml, isNot(contains('data-preview-src=')));
+    expect(indexHtml, isNot(contains('class="source-preview-host"')));
+    expect(Directory('${outDir.path}/files').existsSync(), isFalse);
+    expect(
+      File('${outDir.path}/assets/source_preview.css').existsSync(),
+      isFalse,
+    );
+  });
+
   test('writes a one-page summary pdf without source file details', () async {
     final outDir = Directory('build/test_cli_summary_pdf');
     if (outDir.existsSync()) {
@@ -212,6 +247,72 @@ end_of_record
     );
   });
 
+  test('filters report to files changed from git base', () async {
+    final projectDir = Directory('build/test_cli_changed_project');
+    final outDir = Directory('build/test_cli_changed_report');
+    if (projectDir.existsSync()) {
+      projectDir.deleteSync(recursive: true);
+    }
+    if (outDir.existsSync()) {
+      outDir.deleteSync(recursive: true);
+    }
+
+    File('${projectDir.path}/lib/changed.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('int changed() => 1;\n');
+    File('${projectDir.path}/lib/unchanged.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('int unchanged() => 2;\n');
+    File('${projectDir.path}/coverage/lcov.info')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('''
+SF:lib/changed.dart
+DA:1,0
+LF:1
+LH:0
+end_of_record
+SF:lib/unchanged.dart
+DA:1,1
+LF:1
+LH:1
+end_of_record
+''');
+
+    _git(projectDir, ['init']);
+    _git(projectDir, ['config', 'user.email', 'coverage-lens@example.com']);
+    _git(projectDir, ['config', 'user.name', 'Coverage Lens']);
+    _git(projectDir, ['add', '.']);
+    _git(projectDir, ['commit', '-m', 'baseline']);
+    File('${projectDir.path}/lib/changed.dart')
+        .writeAsStringSync('int changed() => 10;\n');
+    _git(projectDir, ['add', 'lib/changed.dart']);
+    _git(projectDir, ['commit', '-m', 'change covered file']);
+
+    final exitCode = await CoverageLensCli().run([
+      'report',
+      '--lcov',
+      '${projectDir.path}/coverage/lcov.info',
+      '--source',
+      projectDir.path,
+      '--out',
+      outDir.path,
+      '--changed-from',
+      'HEAD~1',
+      '--fail-under-lines',
+      '0',
+      '--fail-under-branches',
+      '0',
+    ]);
+
+    final indexHtml = File('${outDir.path}/index.html').readAsStringSync();
+
+    expect(exitCode, 0);
+    expect(indexHtml, contains('lib/changed.dart'));
+    expect(indexHtml, isNot(contains('lib/unchanged.dart')));
+    expect(indexHtml, contains('0.0%'));
+    expect(_previewFile(outDir, 'lib-changed-dart-').existsSync(), isTrue);
+  });
+
   test('reads lcovPaths from config and expands globs', () async {
     final projectDir = Directory('build/test_cli_config_paths_project');
     final outDir = Directory('build/test_cli_config_paths_report');
@@ -269,4 +370,17 @@ File _previewFile(Directory outDir, String basenamePrefix) {
     final name = file.uri.pathSegments.last;
     return name.startsWith(basenamePrefix) && name.endsWith('.js');
   });
+}
+
+void _git(Directory workingDirectory, List<String> arguments) {
+  final result = Process.runSync(
+    'git',
+    arguments,
+    workingDirectory: workingDirectory.path,
+  );
+  if (result.exitCode != 0) {
+    throw StateError(
+      'git ${arguments.join(' ')} failed: ${result.stderr}',
+    );
+  }
 }
