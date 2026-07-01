@@ -8,6 +8,8 @@ lines without leaving the browser.
 Coverage Lens reads the LCOV file as the source of truth. It does not run tests,
 instrument code, or infer which test covered a line.
 
+![Coverage Lens report preview](https://raw.githubusercontent.com/lacopiroty/coverage_lens/main/doc/images/report-preview.png)
+
 ## Features
 
 - Static report folder with a lightweight `index.html`.

@@ -16,6 +16,10 @@ platforms:
   macos:
   windows:
 
+screenshots:
+  - description: Coverage Lens HTML report with summary cards, coverage tree, and attention list.
+    path: doc/images/report-preview.png
+
 topics:
   - coverage
   - lcov
